@@ -10,7 +10,12 @@
 // Debug logging
 console.log('🌦️ YAWC: Starting to load...');
 
-import { LitElement, html, css } from 'lit';
+// Import Lit from CDN (most reliable for HACS)
+import {
+  LitElement,
+  html,
+  css,
+} from "https://unpkg.com/lit@2.8.0/index.js?module";
 
 console.log('🌦️ YAWC: Lit imported successfully');
 
