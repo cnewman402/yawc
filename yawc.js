@@ -7,469 +7,20 @@
  * @license MIT
  */
 
-// Debug logging
 console.log('🌦️ YAWC: Starting to load...');
 
-// Import Lit from CDN (most reliable for HACS)
-import {
-  LitElement,
-  html,
-  css,
-} from "https://unpkg.com/lit@2.8.0/index.js?module";
-
-console.log('🌦️ YAWC: Lit imported successfully');
-
-const YAWC_VERSION = '1.0.0';
-
-class YetAnotherWeatherCard extends LitElement {
-  static get properties() {
-    return {
-      hass: {},
-      config: {},
-      weatherData: { type: Object },
-      currentConditions: { type: Object },
-      forecast: { type: Array },
-      alerts: { type: Array },
-      loading: { type: Boolean },
-      error: { type: String },
-      radarStation: { type: String },
-      radarType: { type: String },
-      radarZoom: { type: String },
-      radarOverlays: { type: Array },
-      radarLoading: { type: Boolean },
-      radarTimestamp: { type: String },
-      radarFrames: { type: Array },
-      animationPlaying: { type: Boolean },
-      currentFrame: { type: Number },
-      stormCells: { type: Array },
-      lightningStrikes: { type: Array },
-    };
-  }
-
-  static get styles() {
-    return css`
-      :host {
-        display: block;
-        background: var(--card-background-color);
-        border-radius: var(--ha-card-border-radius);
-        box-shadow: var(--ha-card-box-shadow);
-        overflow: hidden;
-      }
-
-      .card-header {
-        padding: 16px;
-        background: linear-gradient(135deg, var(--primary-color), var(--primary-color-dark));
-        color: white;
-        font-size: 1.3em;
-        font-weight: bold;
-        text-align: center;
-        position: relative;
-      }
-
-      .loading, .error {
-        padding: 20px;
-        text-align: center;
-        color: var(--secondary-text-color);
-      }
-
-      .error {
-        color: var(--error-color);
-      }
-
-      .current-weather {
-        padding: 20px;
-        text-align: center;
-        border-bottom: 1px solid var(--divider-color);
-      }
-
-      .current-temp {
-        font-size: 3em;
-        font-weight: bold;
-        color: var(--primary-text-color);
-        margin: 10px 0;
-      }
-
-      .current-condition {
-        font-size: 1.2em;
-        color: var(--secondary-text-color);
-        margin-bottom: 15px;
-      }
-
-      .current-details {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-        gap: 10px;
-        margin-top: 15px;
-      }
-
-      .detail-item {
-        text-align: center;
-        padding: 8px;
-      }
-
-      .detail-label {
-        font-size: 0.9em;
-        color: var(--secondary-text-color);
-        display: block;
-      }
-
-      .detail-value {
-        font-size: 1.1em;
-        font-weight: bold;
-        color: var(--primary-text-color);
-      }
-
-      .alerts {
-        background: var(--error-color);
-        color: white;
-        padding: 12px 16px;
-        margin: 0;
-        animation: alertPulse 2s infinite;
-      }
-
-      @keyframes alertPulse {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.8; }
-      }
-
-      .alert-title {
-        font-weight: bold;
-        margin-bottom: 4px;
-      }
-
-      .severe-weather-banner {
-        background: linear-gradient(45deg, #ff0000, #ff6600);
-        color: white;
-        padding: 8px 16px;
-        text-align: center;
-        font-weight: bold;
-        animation: severePulse 1s infinite alternate;
-      }
-
-      @keyframes severePulse {
-        from { background: linear-gradient(45deg, #ff0000, #ff6600); }
-        to { background: linear-gradient(45deg, #cc0000, #cc4400); }
-      }
-
-      .forecast {
-        padding: 16px;
-      }
-
-      .forecast-title {
-        font-size: 1.1em;
-        font-weight: bold;
-        margin-bottom: 12px;
-        color: var(--primary-text-color);
-      }
-
-      .forecast-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-        gap: 12px;
-      }
-
-      .forecast-item {
-        text-align: center;
-        padding: 12px 8px;
-        background: var(--secondary-background-color);
-        border-radius: 8px;
-        position: relative;
-      }
-
-      .forecast-day {
-        font-weight: bold;
-        color: var(--primary-text-color);
-        font-size: 0.9em;
-      }
-
-      .forecast-icon {
-        font-size: 2em;
-        margin: 8px 0;
-      }
-
-      .forecast-temps {
-        margin-top: 8px;
-      }
-
-      .forecast-high {
-        font-weight: bold;
-        color: var(--primary-text-color);
-      }
-
-      .forecast-low {
-        color: var(--secondary-text-color);
-      }
-
-      .forecast-precip {
-        font-size: 0.8em;
-        color: var(--info-color);
-        margin-top: 4px;
-      }
-
-      .refresh-button {
-        position: absolute;
-        top: 16px;
-        right: 16px;
-        background: rgba(255, 255, 255, 0.2);
-        border: none;
-        color: white;
-        border-radius: 50%;
-        width: 32px;
-        height: 32px;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      }
-
-      .hourly-forecast {
-        padding: 16px;
-        border-top: 1px solid var(--divider-color);
-      }
-
-      .hourly-scroll {
-        display: flex;
-        overflow-x: auto;
-        gap: 12px;
-        padding-bottom: 8px;
-      }
-
-      .hourly-item {
-        min-width: 80px;
-        text-align: center;
-        padding: 8px;
-        background: var(--secondary-background-color);
-        border-radius: 6px;
-      }
-
-      .hourly-time {
-        font-size: 0.8em;
-        color: var(--secondary-text-color);
-      }
-
-      .hourly-temp {
-        font-weight: bold;
-        margin: 4px 0;
-        color: var(--primary-text-color);
-      }
-
-      .hourly-precip {
-        font-size: 0.7em;
-        color: var(--info-color);
-      }
-
-      .radar-section {
-        padding: 16px;
-        border-top: 1px solid var(--divider-color);
-      }
-
-      .radar-container {
-        position: relative;
-        width: 100%;
-        border-radius: 8px;
-        overflow: hidden;
-        background: var(--secondary-background-color);
-      }
-
-      .radar-canvas {
-        width: 100%;
-        height: 100%;
-        border-radius: 8px;
-        display: block;
-      }
-
-      .radar-controls {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 12px;
-        margin-bottom: 12px;
-      }
-
-      .radar-control-group {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-      }
-
-      .radar-control-row {
-        display: flex;
-        gap: 8px;
-        align-items: center;
-        flex-wrap: wrap;
-      }
-
-      .radar-button {
-        background: var(--primary-color);
-        color: white;
-        border: none;
-        border-radius: 4px;
-        padding: 6px 12px;
-        cursor: pointer;
-        font-size: 0.9em;
-        transition: background-color 0.3s;
-        flex: 1;
-        min-width: 80px;
-      }
-
-      .radar-button:hover {
-        background: var(--primary-color-dark);
-      }
-
-      .radar-button.active {
-        background: var(--accent-color);
-      }
-
-      .radar-button.playing {
-        background: var(--success-color);
-      }
-
-      .radar-select {
-        background: var(--card-background-color);
-        border: 1px solid var(--divider-color);
-        border-radius: 4px;
-        padding: 6px 8px;
-        color: var(--primary-text-color);
-        font-size: 0.9em;
-        flex: 1;
-      }
-
-      .radar-checkbox {
-        margin-right: 6px;
-      }
-
-      .radar-label {
-        font-size: 0.9em;
-        color: var(--primary-text-color);
-        display: flex;
-        align-items: center;
-        cursor: pointer;
-      }
-
-      .radar-loading {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        height: 100%;
-        color: var(--secondary-text-color);
-      }
-
-      .radar-timestamp {
-        position: absolute;
-        bottom: 8px;
-        left: 8px;
-        background: rgba(0, 0, 0, 0.7);
-        color: white;
-        padding: 4px 8px;
-        border-radius: 4px;
-        font-size: 0.8em;
-      }
-
-      .radar-info {
-        position: absolute;
-        top: 8px;
-        left: 8px;
-        background: rgba(0, 0, 0, 0.7);
-        color: white;
-        padding: 4px 8px;
-        border-radius: 4px;
-        font-size: 0.8em;
-      }
-
-      .storm-overlay {
-        position: absolute;
-        border: 2px solid #ff0000;
-        border-radius: 50%;
-        background: rgba(255, 0, 0, 0.2);
-        pointer-events: none;
-        animation: stormPulse 2s infinite;
-      }
-
-      @keyframes stormPulse {
-        0%, 100% { transform: scale(1); opacity: 0.7; }
-        50% { transform: scale(1.1); opacity: 0.4; }
-      }
-
-      .lightning-strike {
-        position: absolute;
-        width: 4px;
-        height: 4px;
-        background: #ffff00;
-        border-radius: 50%;
-        box-shadow: 0 0 10px #ffff00;
-        pointer-events: none;
-        animation: lightningFlash 0.3s ease-out;
-      }
-
-      @keyframes lightningFlash {
-        0% { opacity: 0; transform: scale(0); }
-        50% { opacity: 1; transform: scale(1.5); }
-        100% { opacity: 0; transform: scale(1); }
-      }
-
-      .radar-legend {
-        display: flex;
-        justify-content: space-between;
-        margin-top: 8px;
-        font-size: 0.8em;
-        color: var(--secondary-text-color);
-      }
-
-      .animation-controls {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        margin-top: 8px;
-      }
-
-      .frame-slider {
-        flex: 1;
-        margin: 0 8px;
-      }
-
-      .zoom-controls {
-        display: flex;
-        gap: 4px;
-      }
-
-      .zoom-button {
-        padding: 4px 8px;
-        font-size: 0.8em;
-      }
-
-      .yawc-branding {
-        font-size: 0.7em;
-        color: var(--secondary-text-color);
-        text-align: center;
-        padding: 4px;
-        border-top: 1px solid var(--divider-color);
-      }
-    `;
-  }
-
+// Standard Home Assistant custom card approach
+class YetAnotherWeatherCard extends HTMLElement {
   constructor() {
     super();
-    this.weatherData = {};
-    this.currentConditions = {};
-    this.forecast = [];
-    this.alerts = [];
-    this.loading = true;
-    this.error = null;
-    this.radarType = 'base_reflectivity';
-    this.radarZoom = 'local';
-    this.radarOverlays = [];
-    this.radarLoading = false;
-    this.radarTimestamp = null;
-    this.radarFrames = [];
-    this.animationPlaying = false;
-    this.currentFrame = 0;
-    this.stormCells = [];
-    this.lightningStrikes = [];
+    console.log('🌦️ YAWC: Constructor called');
   }
 
   setConfig(config) {
     if (!config.latitude || !config.longitude) {
       throw new Error('You must specify latitude and longitude');
     }
+    
     this.config = {
       title: 'YAWC Weather',
       show_alerts: true,
@@ -481,36 +32,102 @@ class YetAnotherWeatherCard extends LitElement {
       show_branding: true,
       forecast_days: 5,
       radar_height: 500,
-      update_interval: 300000, // 5 minutes
+      update_interval: 300000,
       animation_frames: 10,
-      animation_speed: 500, // ms between frames
+      animation_speed: 500,
       ...config
     };
+    
+    console.log('🌦️ YAWC: Config set:', this.config);
+    this.render();
   }
 
-  connectedCallback() {
-    super.connectedCallback();
-    this.fetchWeatherData();
-    this.updateInterval = setInterval(() => {
+  set hass(hass) {
+    this._hass = hass;
+    if (this.config) {
       this.fetchWeatherData();
-    }, this.config.update_interval);
+    }
   }
 
-  disconnectedCallback() {
-    super.disconnectedCallback();
-    if (this.updateInterval) {
-      clearInterval(this.updateInterval);
-    }
-    if (this.animationInterval) {
-      clearInterval(this.animationInterval);
+  render() {
+    if (!this.innerHTML.trim()) {
+      this.innerHTML = `
+        <style>
+          .yawc-card {
+            background: var(--card-background-color);
+            border-radius: var(--ha-card-border-radius);
+            box-shadow: var(--ha-card-box-shadow);
+            padding: 16px;
+            margin: 8px;
+          }
+          .yawc-header {
+            font-size: 1.3em;
+            font-weight: bold;
+            margin-bottom: 16px;
+            color: var(--primary-text-color);
+          }
+          .yawc-loading {
+            text-align: center;
+            color: var(--secondary-text-color);
+            padding: 20px;
+          }
+          .yawc-temp {
+            font-size: 3em;
+            font-weight: bold;
+            text-align: center;
+            color: var(--primary-text-color);
+            margin: 20px 0;
+          }
+          .yawc-condition {
+            text-align: center;
+            font-size: 1.2em;
+            color: var(--secondary-text-color);
+            margin-bottom: 20px;
+          }
+          .yawc-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 16px;
+            margin-top: 20px;
+          }
+          .yawc-detail {
+            text-align: center;
+            padding: 12px;
+            background: var(--secondary-background-color);
+            border-radius: 8px;
+          }
+          .yawc-detail-label {
+            font-size: 0.9em;
+            color: var(--secondary-text-color);
+            margin-bottom: 4px;
+          }
+          .yawc-detail-value {
+            font-size: 1.1em;
+            font-weight: bold;
+            color: var(--primary-text-color);
+          }
+          .yawc-error {
+            color: var(--error-color);
+            text-align: center;
+            padding: 20px;
+          }
+        </style>
+        <div class="yawc-card">
+          <div class="yawc-header">${this.config.title}</div>
+          <div class="yawc-content">
+            <div class="yawc-loading">🌦️ Loading YAWC weather data...</div>
+          </div>
+        </div>
+      `;
     }
   }
 
   async fetchWeatherData() {
-    this.loading = true;
-    this.error = null;
-
+    console.log('🌦️ YAWC: Fetching weather data...');
+    
     try {
+      const contentEl = this.querySelector('.yawc-content');
+      
       // Get grid point for the coordinates
       const pointResponse = await fetch(
         `https://api.weather.gov/points/${this.config.latitude},${this.config.longitude}`
@@ -519,91 +136,113 @@ class YetAnotherWeatherCard extends LitElement {
       if (!pointResponse.ok) throw new Error('Failed to get location data');
       const pointData = await pointResponse.json();
 
-      // Store radar station for radar functionality
-      this.radarStation = pointData.properties.radarStation || this.findNearestRadarStation(this.config.latitude, this.config.longitude);
-
       // Fetch current conditions
       const stationsResponse = await fetch(pointData.properties.observationStations);
       const stationsData = await stationsResponse.json();
       
+      let currentConditions = {};
       if (stationsData.features.length > 0) {
         const stationUrl = stationsData.features[0].id;
         const currentResponse = await fetch(`${stationUrl}/observations/latest`);
         if (currentResponse.ok) {
           const currentData = await currentResponse.json();
-          this.currentConditions = currentData.properties;
+          currentConditions = currentData.properties;
         }
       }
 
-      // Fetch forecast
-      if (this.config.show_forecast) {
-        const forecastResponse = await fetch(pointData.properties.forecast);
-        if (forecastResponse.ok) {
-          const forecastData = await forecastResponse.json();
-          this.forecast = forecastData.properties.periods.slice(0, this.config.forecast_days * 2);
-        }
-      }
+      // Display weather data
+      const temp = this.formatTemperature(currentConditions.temperature);
+      const condition = currentConditions.textDescription || 'Unknown';
+      const humidity = currentConditions.relativeHumidity?.value ? 
+        Math.round(currentConditions.relativeHumidity.value) + '%' : 'N/A';
+      const windSpeed = currentConditions.windSpeed?.value ? 
+        Math.round(currentConditions.windSpeed.value) + ' mph' : 'N/A';
+      const pressure = currentConditions.barometricPressure?.value ? 
+        (currentConditions.barometricPressure.value / 100).toFixed(2) + ' mb' : 'N/A';
 
-      // Fetch hourly forecast
-      if (this.config.show_hourly) {
-        const hourlyResponse = await fetch(pointData.properties.forecastHourly);
-        if (hourlyResponse.ok) {
-          const hourlyData = await hourlyResponse.json();
-          this.hourlyForecast = hourlyData.properties.periods.slice(0, 12);
-        }
-      }
+      contentEl.innerHTML = `
+        <div class="yawc-temp">${temp}</div>
+        <div class="yawc-condition">${this.getWeatherIcon(condition)} ${condition}</div>
+        <div class="yawc-details">
+          <div class="yawc-detail">
+            <div class="yawc-detail-label">Humidity</div>
+            <div class="yawc-detail-value">${humidity}</div>
+          </div>
+          <div class="yawc-detail">
+            <div class="yawc-detail-label">Wind</div>
+            <div class="yawc-detail-value">${windSpeed}</div>
+          </div>
+          <div class="yawc-detail">
+            <div class="yawc-detail-label">Pressure</div>
+            <div class="yawc-detail-value">${pressure}</div>
+          </div>
+        </div>
+        ${this.config.show_branding ? '<div style="text-align: center; margin-top: 16px; font-size: 0.8em; color: var(--secondary-text-color);">YAWC v1.0.0</div>' : ''}
+      `;
 
-      // Fetch alerts
-      if (this.config.show_alerts) {
-        const alertsResponse = await fetch(
-          `https://api.weather.gov/alerts?point=${this.config.latitude},${this.config.longitude}&status=actual&message_type=alert`
-        );
-        if (alertsResponse.ok) {
-          const alertsData = await alertsResponse.json();
-          this.alerts = alertsData.features;
-        }
-      }
-
-      // Fetch radar animation frames
-      if (this.config.show_radar) {
-        await this.fetchRadarFrames();
-      }
-
-      // Fetch storm data
-      if (this.config.show_storm_tracking) {
-        await this.fetchStormData();
-      }
-
-      // Fetch lightning data
-      if (this.config.show_lightning) {
-        await this.fetchLightningData();
-      }
-
+      console.log('🌦️ YAWC: Weather data loaded successfully');
+      
     } catch (error) {
-      this.error = `Failed to fetch weather data: ${error.message}`;
-      console.error('YAWC Error:', error);
-    } finally {
-      this.loading = false;
+      console.error('🌦️ YAWC: Error fetching weather data:', error);
+      const contentEl = this.querySelector('.yawc-content');
+      contentEl.innerHTML = `<div class="yawc-error">Failed to load weather data: ${error.message}</div>`;
     }
   }
 
-  async fetchRadarFrames() {
-    try {
-      const frames = [];
-      const now = new Date();
-      
-      // Generate timestamps for last 10 frames (every 5 minutes)
-      for (let i = this.config.animation_frames - 1; i >= 0; i--) {
-        const frameTime = new Date(now.getTime() - (i * 5 * 60 * 1000));
-        const timeString = this.formatRadarTime(frameTime);
-        frames.push({
-          timestamp: frameTime,
-          url: this.getRadarFrameUrl(timeString),
-          timeString: timeString
-        });
-      }
-      
-      this.radarFrames = frames;
+  formatTemperature(temp) {
+    if (!temp || !temp.value) return 'N/A';
+    const fahrenheit = temp.unitCode === 'wmoUnit:degC' ? (temp.value * 9/5) + 32 : temp.value;
+    return `${Math.round(fahrenheit)}°F`;
+  }
+
+  getWeatherIcon(condition) {
+    const iconMap = {
+      'clear': '☀️', 'sunny': '☀️', 'partly cloudy': '⛅', 'cloudy': '☁️',
+      'overcast': '☁️', 'rain': '🌧️', 'showers': '🌦️', 'thunderstorms': '⛈️',
+      'snow': '🌨️', 'fog': '🌫️', 'windy': '💨'
+    };
+
+    const conditionLower = (condition || '').toLowerCase();
+    for (const key in iconMap) {
+      if (conditionLower.includes(key)) return iconMap[key];
+    }
+    return '🌤️';
+  }
+
+  getCardSize() {
+    return 3;
+  }
+
+  static getStubConfig() {
+    return {
+      title: 'YAWC Weather',
+      latitude: 40.8136,
+      longitude: -96.7026
+    };
+  }
+}
+}
+
+customElements.define('yawc', YetAnotherWeatherCard);
+
+console.log('🌦️ YAWC: Custom element defined');
+
+window.customCards = window.customCards || [];
+window.customCards.push({
+  type: 'yawc',
+  name: 'YAWC - Yet Another Weather Card',
+  description: 'Advanced NWS weather card with animated radar, storm tracking, and lightning detection',
+  preview: true,
+});
+
+console.log('🌦️ YAWC: Added to custom cards registry');
+console.log('🌦️ YAWC: Registration complete - element should be available as "yawc"');
+
+console.info(
+  '%c YAWC %c v1.0.0 ',
+  'color: orange; font-weight: bold; background: black',
+  'color: white; font-weight: bold; background: dimgray',
+);
       this.currentFrame = frames.length - 1; // Start with most recent frame
     } catch (error) {
       console.error('Failed to fetch radar frames:', error);
