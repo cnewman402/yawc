@@ -7,7 +7,12 @@
  * @license MIT
  */
 
+// Debug logging
+console.log('🌦️ YAWC: Starting to load...');
+
 import { LitElement, html, css } from 'lit';
+
+console.log('🌦️ YAWC: Lit imported successfully');
 
 const YAWC_VERSION = '1.0.0';
 
@@ -1255,6 +1260,8 @@ class YetAnotherWeatherCard extends LitElement {
 
 customElements.define('yawc', YetAnotherWeatherCard);
 
+console.log('🌦️ YAWC: Custom element defined');
+
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: 'yawc',
@@ -1263,8 +1270,11 @@ window.customCards.push({
   preview: true,
 });
 
+console.log('🌦️ YAWC: Added to custom cards registry');
+console.log('🌦️ YAWC: Registration complete - element should be available as "yawc"');
+
 console.info(
   '%c YAWC %c v' + YAWC_VERSION + ' ',
   'color: orange; font-weight: bold; background: black',
   'color: white; font-weight: bold; background: dimgray',
-); Lake
+);
