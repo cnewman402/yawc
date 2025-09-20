@@ -1,0 +1,51 @@
+{
+  "name": "yawc-weather-card",
+  "version": "1.0.0",
+  "description": "Yet Another Weather Card - Advanced NWS weather card for Home Assistant with animated radar, storm tracking, and lightning detection",
+  "main": "yawc.js",
+  "scripts": {
+    "test": "echo \"No tests specified\" && exit 0",
+    "validate": "node -c yawc.js",
+    "release": "gh release create v$npm_package_version --generate-notes"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yourusername/yawc.git"
+  },
+  "keywords": [
+    "home-assistant",
+    "lovelace",
+    "weather",
+    "radar",
+    "nws",
+    "national-weather-service",
+    "storm-tracking",
+    "lightning",
+    "animated-radar",
+    "hacs",
+    "custom-card",
+    "weather-card",
+    "severe-weather"
+  ],
+  "author": "YAWC Contributors",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/yourusername/yawc/issues"
+  },
+  "homepage": "https://github.com/yourusername/yawc#readme",
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "files": [
+    "yawc.js",
+    "README.md",
+    "LICENSE",
+    "hacs.json"
+  ],
+  "devDependencies": {
+    "eslint": "^8.0.0"
+  },
+  "peerDependencies": {
+    "lit": "^2.0.0"
+  }
+}

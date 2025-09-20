@@ -1,0 +1,10 @@
+{
+  "name": "YAWC - Yet Another Weather Card",
+  "content_in_root": false,
+  "filename": "yawc.js",
+  "country": ["US"],
+  "homeassistant": "2023.1.0",
+  "render_readme": true,
+  "zip_release": true,
+  "iot_class": "Cloud Polling"
+}
