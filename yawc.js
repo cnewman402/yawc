@@ -9,10 +9,16 @@
 
 console.log('🌦️ YAWC: Starting to load...');
 
+// Define the class first
 class YetAnotherWeatherCard extends HTMLElement {
   constructor() {
     super();
     console.log('🌦️ YAWC: Constructor called');
+    
+    // Ensure methods are immediately available
+    this.setConfig = this.setConfig.bind(this);
+    this.fetchWeatherData = this.fetchWeatherData.bind(this);
+    
     this.attachShadow({ mode: 'open' });
     this._hass = null;
     this.config = null;
@@ -20,6 +26,10 @@ class YetAnotherWeatherCard extends HTMLElement {
 
   setConfig(config) {
     console.log('🌦️ YAWC: setConfig called with:', config);
+    
+    if (!config) {
+      throw new Error('Invalid configuration');
+    }
     
     if (!config.latitude || !config.longitude) {
       throw new Error('You must specify latitude and longitude');
@@ -31,6 +41,7 @@ class YetAnotherWeatherCard extends HTMLElement {
       ...config
     };
     
+    console.log('🌦️ YAWC: Config set, calling render');
     this.render();
   }
 
@@ -262,8 +273,24 @@ class YetAnotherWeatherCard extends HTMLElement {
   }
 }
 
-// Register the custom element
-customElements.define('yawc', YetAnotherWeatherCard);
+// Register the custom element immediately
+if (!customElements.get('yawc')) {
+  customElements.define('yawc', YetAnotherWeatherCard);
+  console.log('🌦️ YAWC: Custom element defined successfully');
+} else {
+  console.log('🌦️ YAWC: Element already defined');
+}
+
+// Test that the element was registered correctly
+setTimeout(() => {
+  const testElement = customElements.get('yawc');
+  if (testElement) {
+    console.log('🌦️ YAWC: Element registration verified');
+    console.log('🌦️ YAWC: setConfig method available:', typeof testElement.prototype.setConfig);
+  } else {
+    console.error('🌦️ YAWC: Element registration failed!');
+  }
+}, 100);
 
 console.log('🌦️ YAWC: Custom element defined');
 
