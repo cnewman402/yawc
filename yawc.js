@@ -9,7 +9,7 @@
 
 console.log('🌦️ YAWC: Fresh load starting...');
 
-// Define the element class with proper method binding
+// Define the element class
 class YetAnotherWeatherCard extends HTMLElement {
   constructor() {
     super();
@@ -23,39 +23,9 @@ class YetAnotherWeatherCard extends HTMLElement {
     // Attach shadow DOM
     this.attachShadow({ mode: 'open' });
     
-    console.log('🌦️ YAWC: Constructor complete, setConfig available:', typeof this.setConfig);
+    console.log('🌦️ YAWC: Constructor complete');
   }
 
-  // Define setConfig as a class method (not arrow function)
-  setConfig(config) {
-    console.log('🌦️ YAWC: setConfig method called with:', config);
-    console.log('🌦️ YAWC: this refers to:', this.constructor.name);
-    
-    if (!config) {
-      const error = 'Invalid configuration: config is null or undefined';
-      console.error('🌦️ YAWC:', error);
-      throw new Error(error);
-    }
-    
-    if (!config.latitude || !config.longitude) {
-      const error = 'You must specify latitude and longitude';
-      console.error('🌦️ YAWC:', error);
-      throw new Error(error);
-    }
-    
-    this.config = {
-      title: 'YAWC Weather',
-      show_branding: true,
-      ...config
-    };
-    
-    this.isConfigured = true;
-    console.log('🌦️ YAWC: Configuration set successfully');
-    this.render();
-    console.log('🌦️ YAWC: setConfig completed successfully');
-  }
-
-  // Define hass getter/setter as class methods
   set hass(hass) {
     console.log('🌦️ YAWC: hass setter called');
     this._hass = hass;
@@ -67,21 +37,212 @@ class YetAnotherWeatherCard extends HTMLElement {
   get hass() {
     return this._hass;
   }
+}
 
-  // Define getCardSize as a class method
-  getCardSize() {
-    return 4;
+// Explicitly define setConfig on the prototype
+YetAnotherWeatherCard.prototype.setConfig = function(config) {
+  console.log('🌦️ YAWC: setConfig method called with:', config);
+  console.log('🌦️ YAWC: this refers to:', this.constructor.name);
+  
+  if (!config) {
+    const error = 'Invalid configuration: config is null or undefined';
+    console.error('🌦️ YAWC:', error);
+    throw new Error(error);
   }
+  
+  if (!config.latitude || !config.longitude) {
+    const error = 'You must specify latitude and longitude';
+    console.error('🌦️ YAWC:', error);
+    throw new Error(error);
+  }
+  
+  this.config = {
+    title: 'YAWC Weather',
+    show_branding: true,
+    ...config
+  };
+  
+  this.isConfigured = true;
+  console.log('🌦️ YAWC: Configuration set successfully');
+  this.render();
+  console.log('🌦️ YAWC: setConfig completed successfully');
+};
 
-  // Define static method properly
-  static getStubConfig() {
-    return {
-      title: 'YAWC Weather',
-      latitude: 40.8136,
-      longitude: -96.7026,
-      show_branding: true
-    };
+// Explicitly define other required methods
+YetAnotherWeatherCard.prototype.getCardSize = function() {
+  return 4;
+};
+
+// Define static method
+YetAnotherWeatherCard.getStubConfig = function() {
+  return {
+    title: 'YAWC Weather',
+    latitude: 40.8136,
+    longitude: -96.7026,
+    show_branding: true
+  };
+};
+
+// Define render method on prototype
+YetAnotherWeatherCard.prototype.render = function() {
+  console.log('🌦️ YAWC: Rendering card');
+  
+  if (!this.shadowRoot) {
+    console.error('🌦️ YAWC: Shadow root not available');
+    return;
   }
+  
+  this.shadowRoot.innerHTML = `
+    <style>
+      :host {
+        display: block;
+      }
+      .yawc-card {
+        background: var(--card-background-color, #ffffff);
+        border-radius: var(--ha-card-border-radius, 12px);
+        box-shadow: var(--ha-card-box-shadow, 0 2px 8px rgba(0,0,0,0.1));
+        padding: 20px;
+        margin: 8px 0;
+        font-family: var(--primary-font-family, sans-serif);
+      }
+      .yawc-header {
+        font-size: 1.4em;
+        font-weight: bold;
+        margin-bottom: 20px;
+        color: var(--primary-text-color, #333333);
+        text-align: center;
+      }
+      .yawc-content {
+        min-height: 100px;
+      }
+      .yawc-loading {
+        text-align: center;
+        color: var(--secondary-text-color, #666666);
+        padding: 30px;
+        font-size: 1.1em;
+      }
+      .yawc-temp {
+        font-size: 3.5em;
+        font-weight: bold;
+        text-align: center;
+        color: var(--primary-text-color, #333333);
+        margin: 25px 0;
+        line-height: 1;
+      }
+      .yawc-condition {
+        text-align: center;
+        font-size: 1.3em;
+        color: var(--secondary-text-color, #666666);
+        margin-bottom: 25px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+      }
+      .yawc-icon {
+        font-size: 1.5em;
+      }
+      .yawc-details {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 15px;
+        margin-top: 25px;
+      }
+      .yawc-detail {
+        text-align: center;
+        padding: 15px;
+        background: var(--secondary-background-color, #f8f9fa);
+        border-radius: 10px;
+        border: 1px solid var(--divider-color, #e0e0e0);
+      }
+      .yawc-detail-label {
+        font-size: 0.9em;
+        color: var(--secondary-text-color, #666666);
+        margin-bottom: 8px;
+        font-weight: 500;
+      }
+      .yawc-detail-value {
+        font-size: 1.2em;
+        font-weight: bold;
+        color: var(--primary-text-color, #333333);
+      }
+      .yawc-error {
+        color: var(--error-color, #f44336);
+        text-align: center;
+        padding: 25px;
+        background: rgba(244, 67, 54, 0.1);
+        border-radius: 8px;
+        border: 1px solid var(--error-color, #f44336);
+      }
+      .yawc-branding {
+        text-align: center;
+        margin-top: 20px;
+        padding-top: 15px;
+        font-size: 0.8em;
+        color: var(--secondary-text-color, #666666);
+        border-top: 1px solid var(--divider-color, #e0e0e0);
+        opacity: 0.7;
+      }
+      .yawc-location {
+        text-align: center;
+        font-size: 0.9em;
+        color: var(--secondary-text-color, #666666);
+        margin-bottom: 15px;
+      }
+    </style>
+    <div class="yawc-card">
+      <div class="yawc-header">${this.config.title}</div>
+      <div class="yawc-location">📍 ${this.config.latitude.toFixed(4)}, ${this.config.longitude.toFixed(4)}</div>
+      <div class="yawc-content">
+        <div class="yawc-loading">
+          <div>🌦️ Loading weather data...</div>
+          <div style="font-size: 0.9em; margin-top: 10px; opacity: 0.7;">Connecting to National Weather Service</div>
+        </div>
+      </div>
+      ${this.config.show_branding ? '<div class="yawc-branding">YAWC v1.0.0 - Yet Another Weather Card</div>' : ''}
+    </div>
+  `;
+};
+
+// Define fetchWeatherData method on prototype
+YetAnotherWeatherCard.prototype.fetchWeatherData = function() {
+  console.log('🌦️ YAWC: Starting weather data fetch...');
+  
+  const contentEl = this.shadowRoot?.querySelector('.yawc-content');
+  if (!contentEl) {
+    console.error('🌦️ YAWC: Content element not found');
+    return;
+  }
+  
+  // For now, just show a success message to verify it works
+  setTimeout(() => {
+    contentEl.innerHTML = `
+      <div class="yawc-temp">72°F</div>
+      <div class="yawc-condition">
+        <span class="yawc-icon">⛅</span>
+        <span>Partly Cloudy</span>
+      </div>
+      <div class="yawc-details">
+        <div class="yawc-detail">
+          <div class="yawc-detail-label">Humidity</div>
+          <div class="yawc-detail-value">65%</div>
+        </div>
+        <div class="yawc-detail">
+          <div class="yawc-detail-label">Wind</div>
+          <div class="yawc-detail-value">12 mph</div>
+        </div>
+        <div class="yawc-detail">
+          <div class="yawc-detail-label">Pressure</div>
+          <div class="yawc-detail-value">30.15 inHg</div>
+        </div>
+      </div>
+      <div style="text-align: center; margin-top: 15px; font-size: 0.8em; color: var(--secondary-text-color, #666); opacity: 0.8;">
+        Sample Data • ${new Date().toLocaleTimeString()}
+      </div>
+    `;
+    console.log('🌦️ YAWC: Sample weather data displayed');
+  }, 1000);
+};
 
   render() {
     console.log('🌦️ YAWC: Rendering card');
