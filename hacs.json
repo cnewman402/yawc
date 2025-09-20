@@ -1,5 +1,8 @@
 {
   "name": "YAWC - Yet Another Weather Card",
   "filename": "yawc.js",
-  "render_readme": true
+  "render_readme": true,
+  "zip_release": false,
+  "content_in_root": true,
+  "homeassistant": "2023.1.0"
 }
