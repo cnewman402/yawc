@@ -1253,11 +1253,11 @@ class YetAnotherWeatherCard extends LitElement {
   }
 }
 
-customElements.define('yawc-card', YetAnotherWeatherCard);
+customElements.define('yawc', YetAnotherWeatherCard);
 
 window.customCards = window.customCards || [];
 window.customCards.push({
-  type: 'yawc-card',
+  type: 'yawc',
   name: 'YAWC - Yet Another Weather Card',
   description: 'Advanced NWS weather card with animated radar, storm tracking, and lightning detection',
   preview: true,
