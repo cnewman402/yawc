@@ -9,26 +9,38 @@
 
 console.log('🌦️ YAWC: Fresh load starting...');
 
+// Define the element class with proper method binding
 class YetAnotherWeatherCard extends HTMLElement {
   constructor() {
     super();
     console.log('🌦️ YAWC: HTMLElement constructor called');
     
-    this.attachShadow({ mode: 'open' });
+    // Initialize properties immediately
     this._hass = null;
     this.config = null;
     this.isConfigured = false;
+    
+    // Attach shadow DOM
+    this.attachShadow({ mode: 'open' });
+    
+    console.log('🌦️ YAWC: Constructor complete, setConfig available:', typeof this.setConfig);
   }
 
+  // Define setConfig as a class method (not arrow function)
   setConfig(config) {
-    console.log('🌦️ YAWC: setConfig called with:', config);
+    console.log('🌦️ YAWC: setConfig method called with:', config);
+    console.log('🌦️ YAWC: this refers to:', this.constructor.name);
     
     if (!config) {
-      throw new Error('Invalid configuration');
+      const error = 'Invalid configuration: config is null or undefined';
+      console.error('🌦️ YAWC:', error);
+      throw new Error(error);
     }
     
     if (!config.latitude || !config.longitude) {
-      throw new Error('You must specify latitude and longitude');
+      const error = 'You must specify latitude and longitude';
+      console.error('🌦️ YAWC:', error);
+      throw new Error(error);
     }
     
     this.config = {
@@ -38,10 +50,12 @@ class YetAnotherWeatherCard extends HTMLElement {
     };
     
     this.isConfigured = true;
-    console.log('🌦️ YAWC: Configuration complete');
+    console.log('🌦️ YAWC: Configuration set successfully');
     this.render();
+    console.log('🌦️ YAWC: setConfig completed successfully');
   }
 
+  // Define hass getter/setter as class methods
   set hass(hass) {
     console.log('🌦️ YAWC: hass setter called');
     this._hass = hass;
@@ -52,6 +66,21 @@ class YetAnotherWeatherCard extends HTMLElement {
 
   get hass() {
     return this._hass;
+  }
+
+  // Define getCardSize as a class method
+  getCardSize() {
+    return 4;
+  }
+
+  // Define static method properly
+  static getStubConfig() {
+    return {
+      title: 'YAWC Weather',
+      latitude: 40.8136,
+      longitude: -96.7026,
+      show_branding: true
+    };
   }
 
   render() {
@@ -406,19 +435,39 @@ class YetAnotherWeatherCard extends HTMLElement {
   }
 }
 
-// Register the custom element
-if (!customElements.get('yawc')) {
-  customElements.define('yawc', YetAnotherWeatherCard);
-  console.log('🌦️ YAWC: Custom element registered successfully');
+// Register the custom element with extra validation
+console.log('🌦️ YAWC: About to register custom element...');
+
+// Verify the class has the required methods before registering
+console.log('🌦️ YAWC: Class prototype methods:', Object.getOwnPropertyNames(YetAnotherWeatherCard.prototype));
+console.log('🌦️ YAWC: setConfig method exists:', 'setConfig' in YetAnotherWeatherCard.prototype);
+console.log('🌦️ YAWC: setConfig method type:', typeof YetAnotherWeatherCard.prototype.setConfig);
+
+// Check if element is already registered
+if (customElements.get('yawc')) {
+  console.log('🌦️ YAWC: Element already registered, skipping registration');
 } else {
-  console.log('🌦️ YAWC: Element already registered');
+  try {
+    customElements.define('yawc', YetAnotherWeatherCard);
+    console.log('🌦️ YAWC: ✅ Custom element registered successfully');
+  } catch (error) {
+    console.error('🌦️ YAWC: ❌ Failed to register custom element:', error);
+  }
+}
+
+// Register the custom element
+if (!customElements.get('yawc-v2')) {
+  customElements.define('yawc-v2', YetAnotherWeatherCard);
+  console.log('🌦️ YAWC: Custom element registered as yawc-v2');
+} else {
+  console.log('🌦️ YAWC: Element yawc-v2 already registered');
 }
 
 // Register with card picker
 window.customCards = window.customCards || [];
 window.customCards.push({
-  type: 'yawc',
-  name: 'YAWC - Yet Another Weather Card',
+  type: 'yawc-v2',
+  name: 'YAWC v2 - Yet Another Weather Card',
   description: 'Enhanced NWS weather card for Home Assistant',
   preview: true,
 });
@@ -427,9 +476,9 @@ console.log('🌦️ YAWC: Card registration complete');
 
 // Verify registration
 setTimeout(() => {
-  const element = customElements.get('yawc');
+  const element = customElements.get('yawc-v2');
   if (element) {
-    console.log('🌦️ YAWC: ✅ Registration verified - element is available');
+    console.log('🌦️ YAWC: ✅ Registration verified - yawc-v2 is available');
     console.log('🌦️ YAWC: ✅ setConfig method type:', typeof element.prototype.setConfig);
   } else {
     console.error('🌦️ YAWC: ❌ Registration failed');
