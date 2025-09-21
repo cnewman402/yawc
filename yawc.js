@@ -1,3 +1,9 @@
+console.info(
+  '%c YAWC %c Yet Another Weather Card (NWS) v1.0.0 ',
+  'color: orange; font-weight: bold; background: black',
+  'color: white; font-weight: bold; background: dimgray'
+);
+
 class YetAnotherWeatherCard extends HTMLElement {
   constructor() {
     super();
@@ -489,21 +495,16 @@ class YawcCardEditor extends HTMLElement {
   }
 }
 
+// Define the custom elements
 customElements.define('yawc', YetAnotherWeatherCard);
 customElements.define('yawc-editor', YawcCardEditor);
 
-// Register the card
+// Register with Home Assistant's card registry
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: 'yawc',
-  name: 'YAWC - Yet Another Weather Card (NWS)',
-  description: 'A weather card using National Weather Service API with current conditions and 7-day forecast',
-  preview: true,
-  documentationURL: 'https://github.com/yourusername/yawc-card'
+  name: 'YAWC',
+  description: 'Yet Another Weather Card using National Weather Service API',
+  preview: false,
+  documentationURL: 'https://github.com/yourusername/yawc'
 });
-
-console.info(
-  '%c YAWC - NWS Weather Card %c Version 2.0.0 ',
-  'color: orange; font-weight: bold; background: black',
-  'color: white; font-weight: bold; background: dimgray'
-);
