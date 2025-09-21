@@ -423,7 +423,7 @@ class YetAnotherWeatherCard extends HTMLElement {
     return 'https://via.placeholder.com/800x600/' + color + '/ffffff?text=' + text;
   }
 
-  // Clean, simple radar display without fake precipitation
+  // Simple, honest radar placeholder
   async fetchRadarData() {
     if (!this._weatherData || !this._weatherData.coordinates) {
       console.log('No weather data for radar');
@@ -433,18 +433,17 @@ class YetAnotherWeatherCard extends HTMLElement {
     var self = this;
     var radarStation = this._weatherData.radarStation;
     
-    console.log('Creating clean radar display for station:', radarStation);
+    console.log('Creating radar placeholder for station:', radarStation);
     
     var now = new Date();
     this._radarFrames = [];
     
-    // Create clean radar frames
+    // Create simple placeholder frames
     for (var i = 0; i < this._config.animation_frames; i++) {
       var frameTime = new Date(now.getTime() - (i * 6 * 60 * 1000));
       var frameIndex = this._config.animation_frames - 1 - i;
       
-      // Create a clean, professional radar display
-      var radarUrl = this.createCleanRadarDisplay(radarStation, frameTime, frameIndex);
+      var radarUrl = this.createSimpleRadarPlaceholder(radarStation, frameTime, frameIndex);
       
       this._radarFrames.push({
         timestamp: frameTime,
@@ -465,11 +464,70 @@ class YetAnotherWeatherCard extends HTMLElement {
       lastUpdated: new Date()
     };
 
-    console.log('Created', this._radarFrames.length, 'clean radar displays');
-    
     setTimeout(function() {
       self.updateRadarDisplay();
     }, 100);
+  }
+
+  createSimpleRadarPlaceholder(station, timestamp, frameIndex) {
+    var canvas = document.createElement('canvas');
+    canvas.width = 600;
+    canvas.height = 600;
+    var ctx = canvas.getContext('2d');
+    
+    // Simple dark background
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fillRect(0, 0, 600, 600);
+    
+    var centerX = 300;
+    var centerY = 300;
+    
+    // Draw basic radar scope
+    ctx.strokeStyle = '#444444';
+    ctx.lineWidth = 1;
+    
+    // Range circles
+    [75, 150, 225].forEach(function(radius) {
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+      ctx.stroke();
+    });
+    
+    // Crosshairs
+    ctx.beginPath();
+    ctx.moveTo(centerX, centerY - 250);
+    ctx.lineTo(centerX, centerY + 250);
+    ctx.moveTo(centerX - 250, centerY);
+    ctx.lineTo(centerX + 250, centerY);
+    ctx.stroke();
+    
+    // Station marker
+    ctx.fillStyle = '#00ff88';
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, 4, 0, 2 * Math.PI);
+    ctx.fill();
+    
+    // Clear message
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 16px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('RADAR PLACEHOLDER', centerX, centerY - 50);
+    
+    ctx.font = '12px Arial';
+    ctx.fillText('Station: ' + station, centerX, centerY - 20);
+    ctx.fillText('No precipitation data available', centerX, centerY + 10);
+    ctx.fillText('Frame ' + (frameIndex + 1) + ' of ' + this._config.animation_frames, centerX, centerY + 30);
+    
+    // Timestamp
+    ctx.textAlign = 'left';
+    ctx.font = '11px monospace';
+    ctx.fillText(timestamp.toISOString().substring(0, 16) + 'Z', 10, 25);
+    
+    // Status
+    ctx.fillStyle = '#00ff88';
+    ctx.fillText('● OPERATIONAL', 10, 580);
+    
+    return canvas.toDataURL('image/png');
   }
 
   createCleanRadarDisplay(station, timestamp, frameIndex) {
