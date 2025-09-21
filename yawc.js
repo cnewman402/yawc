@@ -4,19 +4,38 @@ class YetAnotherWeatherCard extends LitElement {
       hass: {},
       _config: {},
       _sun: {},
+      _radarVisible: { state: true }, // Internal state for radar visibility
     };
   }
 
-  // . . . (rest of the card's internal properties)
+  constructor() {
+    super();
+    this._radarVisible = false; // Start with radar hidden
+    this.weatherIcons = {
+      "clear-night": "clear-night",
+      cloudy: "cloudy",
+      fog: "fog",
+      hail: "hail",
+      lightning: "lightning",
+      "lightning-rainy": "lightning-rainy",
+      partlycloudy: "partly-cloudy",
+      pouring: "pouring",
+      rainy: "rainy",
+      snowy: "snowy",
+      "snowy-rainy": "snowy-rainy",
+      sunny: "sunny",
+      windy: "windy",
+      "windy-variant": "windy",
+      exceptional: "exceptional",
+    };
+  }
 
   setConfig(config) {
     if (!config.entity) {
       throw new Error("Please define a weather entity");
     }
     this._config = config;
-
     this._sun = this.hass.states["sun.sun"];
-
     this.weather = {
       state: "",
       name: "",
@@ -41,6 +60,11 @@ class YetAnotherWeatherCard extends LitElement {
   get isNight() {
     return this._sun.state == "below_horizon";
   }
+  
+  // NEW: Function to toggle radar visibility
+  _toggleRadar() {
+    this._radarVisible = !this._radarVisible;
+  }
 
   // Render the card
   render() {
@@ -53,10 +77,7 @@ class YetAnotherWeatherCard extends LitElement {
     };
     const lang = this.hass.selectedLanguage || this.hass.language;
 
-    // Conditionally render the radar iframe based on a toggle entity
-    const showRadar =
-      this._config.radar_entity &&
-      this.hass.states[this._config.radar_entity]?.state === "on";
+    const hasRadarConfig = this._config.radar_source && (this._config.radar_station || this._config.radar_source === 'windy');
 
     return html`
       <ha-card>
@@ -75,6 +96,14 @@ class YetAnotherWeatherCard extends LitElement {
                   minute: "2-digit",
                 })}
               </div>
+              ${hasRadarConfig ? html`
+                <ha-icon-button
+                  class="radar-toggle-button ${this._radarVisible ? 'active' : ''}"
+                  icon="mdi:radar"
+                  @click="${this._toggleRadar}"
+                  title="Toggle Radar View"
+                ></ha-icon-button>
+              ` : ''}
             </div>
           </div>
 
@@ -201,7 +230,7 @@ class YetAnotherWeatherCard extends LitElement {
             )}
           </div>
 
-          ${showRadar ? this.renderRadar() : ""}
+          ${this._radarVisible ? this.renderRadar() : ""}
         </div>
       </ha-card>
     `;
@@ -209,7 +238,7 @@ class YetAnotherWeatherCard extends LitElement {
 
   // Render the radar iframe
   renderRadar() {
-    const radarSource = this._config.radar_source || 'nws'; // Default to 'nws'
+    const radarSource = this._config.radar_source || 'nws';
     let radarUrl;
 
     if (radarSource === 'windy') {
@@ -217,13 +246,12 @@ class YetAnotherWeatherCard extends LitElement {
       const lon = this._config.radar_lon || this.hass.config.longitude;
       const zoom = this._config.radar_zoom || 8;
       radarUrl = `https://embed.windy.com/embed.html?type=radar&lat=${lat}&lon=${lon}&zoom=${zoom}&product=radar`;
-    } else { // Default to NWS
+    } else {
       if (!this._config.radar_station) {
         return html`<div class="yawc-radar-error">Error: 'radar_station' must be configured for NWS.</div>`;
       }
       radarUrl = `https://radar.weather.gov/station/${this._config.radar_station}/standard`;
     }
-
     const height = this._config.radar_height || '400px';
 
     return html`
@@ -247,7 +275,8 @@ class YetAnotherWeatherCard extends LitElement {
   }
 
   getCardSize() {
-    return 4;
+    // Dynamically adjust card size if radar is visible
+    return this._radarVisible ? 8 : 4;
   }
 
   static get styles() {
@@ -263,6 +292,9 @@ class YetAnotherWeatherCard extends LitElement {
       }
       .yawc-header-side-right {
         text-align: right;
+        display: flex; /* Make this a flex container */
+        align-items: center; /* Align items vertically */
+        gap: 8px; /* Add space between time and button */
       }
       .yawc-name {
         font-size: 24px;
@@ -276,6 +308,13 @@ class YetAnotherWeatherCard extends LitElement {
       .yawc-datetime {
         font-size: 14px;
         color: var(--secondary-text-color);
+      }
+      /* NEW: Styles for the toggle button */
+      .radar-toggle-button {
+        color: var(--secondary-text-color);
+      }
+      .radar-toggle-button.active {
+        color: var(--primary-color);
       }
       .yawc-current {
         display: flex;
@@ -314,3 +353,45 @@ class YetAnotherWeatherCard extends LitElement {
         margin: 4px 8px;
       }
       .yawc-detail ha-icon {
+        margin-right: 8px;
+        color: var(--secondary-text-color);
+      }
+      .yawc-detail-value {
+        font-size: 14px;
+      }
+      .yawc-forecast {
+        display: flex;
+        justify-content: space-between;
+      }
+      .yawc-forecast-day {
+        text-align: center;
+      }
+      .yawc-forecast-day-name {
+        font-size: 12px;
+        color: var(--secondary-text-color);
+        margin-bottom: 4px;
+      }
+      .yawc-forecast-day-icon img {
+        width: 48px;
+        height: 48px;
+      }
+      .yawc-forecast-day-temp {
+        font-size: 14px;
+      }
+      .yawc-radar-container {
+        margin-top: 16px;
+        padding-top: 16px;
+        border-top: 1px solid var(--divider-color);
+      }
+      .yawc-radar-error {
+        margin-top: 16px;
+        padding: 16px;
+        background-color: var(--error-color);
+        color: var(--text-primary-color);
+        border-radius: var(--ha-card-border-radius, 4px);
+      }
+    `;
+  }
+}
+
+customElements.define("yawc", YetAnotherWeatherCard);
