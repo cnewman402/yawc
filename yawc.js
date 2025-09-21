@@ -17,6 +17,7 @@ class YetAnotherWeatherCard extends HTMLElement {
       show_forecast: config.show_forecast !== false,
       show_hourly: config.show_hourly !== false,
       show_radar: config.show_radar !== false,
+      show_branding: config.show_branding !== false,
       forecast_days: config.forecast_days || 5,
       radar_zoom: config.radar_zoom || 7,
       radar_height: config.radar_height || 450,
@@ -28,7 +29,7 @@ class YetAnotherWeatherCard extends HTMLElement {
   set hass(hass) {
     this._hass = hass;
     if (!this._weatherData) this.fetchWeatherData();
-    else this.updateWeatherOnly(); // Update weather without touching radar
+    else this.updateWeatherOnly();
     this.startUpdateInterval();
   }
 
@@ -114,13 +115,11 @@ class YetAnotherWeatherCard extends HTMLElement {
   }
 
   updateWeatherOnly() {
-    // Only update weather sections without touching radar
     if (!this._weatherData || this._weatherData.error) {
       this.render();
       return;
     }
     
-    // Update only specific sections
     const headerEl = this.shadowRoot.querySelector('.header .upd');
     if (headerEl) {
       const upd = this._weatherData.lastUpdated?.toLocaleTimeString() || '';
@@ -178,13 +177,12 @@ class YetAnotherWeatherCard extends HTMLElement {
     if (this._config.show_radar) h += this.radar();
     if (this._config.show_hourly) h += this.hourly();
     if (this._config.show_forecast) h += this.forecast();
-    h += `<div class="footer">Data: National Weather Service | YAWC v3.1</div>`;
+    h += this.footer();
     h += '</ha-card>';
     
     this.shadowRoot.innerHTML = h;
     this._hasRenderedRadar = true;
     
-    // Add refresh button listener
     const refreshBtn = this.shadowRoot.querySelector('.refresh-btn');
     if (refreshBtn) {
       refreshBtn.addEventListener('click', () => this.fetchWeatherData());
@@ -265,7 +263,6 @@ class YetAnotherWeatherCard extends HTMLElement {
     const zoom = this._config.radar_zoom;
     const height = this._config.radar_height;
     
-    // Windy embed URL
     const windyUrl = `https://embed.windy.com/embed2.html?lat=${lat}&lon=${lon}&detailLat=${lat}&detailLon=${lon}&width=650&height=${height}&zoom=${zoom}&level=surface&overlay=radar&product=radar&menu=&message=&marker=true&calendar=now&pressure=&type=map&location=coordinates&detail=&metricWind=mph&metricTemp=%C2%B0F&radarRange=-1`;
     
     return `<div class="radar">
@@ -322,6 +319,13 @@ class YetAnotherWeatherCard extends HTMLElement {
     return h + '</div>';
   }
 
+  footer() {
+    return `<div class="footer">
+      <div class="data-source">Data from National Weather Service</div>
+      ${this._config.show_branding ? '<div class="branding">YAWC v3.2 - Yet Another Weather Card</div>' : ''}
+    </div>`;
+  }
+
   getIcon(cond) {
     if (!cond) return '🌡️';
     const c = cond.toLowerCase();
@@ -333,6 +337,8 @@ class YetAnotherWeatherCard extends HTMLElement {
     if (c.includes('snow')) return '❄️';
     if (c.includes('fog') || c.includes('mist')) return '🌫️';
     if (c.includes('wind')) return '💨';
+    if (c.includes('hot')) return '🔥';
+    if (c.includes('cold')) return '🥶';
     return '🌡️';
   }
 
@@ -387,7 +393,8 @@ ha-card { background: var(--card-background-color); border-radius: var(--ha-card
 .f-icon { text-align: center; font-size: 20px; }
 .f-temp { text-align: center; font-weight: bold; }
 .f-desc { text-align: right; color: var(--secondary-text-color); font-size: 14px; }
-.footer { padding: 12px 16px; border-top: 1px solid var(--divider-color); background: var(--secondary-background-color); font-size: 11px; color: var(--secondary-text-color); text-align: center; }
+.footer { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-top: 1px solid var(--divider-color); background: var(--secondary-background-color); }
+.data-source, .branding { font-size: 11px; color: var(--secondary-text-color); }
 @media (max-width: 600px) {
   .main { flex-direction: column; text-align: center; }
   .details { grid-template-columns: 1fr 1fr; }
@@ -399,21 +406,210 @@ ha-card { background: var(--card-background-color); border-radius: var(--ha-card
     return this._config.show_radar ? 9 : 6; 
   }
   
+  static getConfigElement() {
+    return document.createElement('yawc-card-editor');
+  }
+  
   static getStubConfig() { 
     return { 
       title: 'YAWC Weather', 
       show_radar: true,
       radar_zoom: 7,
-      radar_height: 450
+      radar_height: 450,
+      show_forecast: true,
+      forecast_days: 5
     }; 
   }
 }
 
+// Configuration Editor
+class YawcCardEditor extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: 'open' });
+  }
+
+  setConfig(config) {
+    this._config = config || {};
+    this.render();
+  }
+
+  configChanged(newConfig) {
+    const event = new Event('config-changed', {
+      bubbles: true,
+      composed: true,
+    });
+    event.detail = { config: newConfig };
+    this.dispatchEvent(event);
+  }
+
+  render() {
+    this.shadowRoot.innerHTML = `
+      <style>
+        .editor { padding: 16px; }
+        .section { background: var(--secondary-background-color); padding: 12px; border-radius: 8px; margin-bottom: 16px; }
+        .section-title { font-weight: 500; margin-bottom: 12px; color: var(--primary-text-color); }
+        .form-group { margin-bottom: 12px; }
+        label { display: block; margin-bottom: 4px; font-size: 14px; color: var(--primary-text-color); }
+        input[type="text"], input[type="number"], select {
+          width: 100%; padding: 8px; border: 1px solid var(--divider-color);
+          border-radius: 4px; background: var(--card-background-color);
+          color: var(--primary-text-color); box-sizing: border-box;
+        }
+        input[type="checkbox"] { margin-right: 8px; }
+        .checkbox-label { display: flex; align-items: center; margin-bottom: 8px; cursor: pointer; }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .info-box { background: var(--primary-color); color: white; padding: 12px; border-radius: 8px; margin-top: 16px; }
+        .info-title { font-weight: 500; margin-bottom: 8px; }
+        .info-content { font-size: 13px; line-height: 1.4; }
+      </style>
+      
+      <div class="editor">
+        <div class="section">
+          <div class="section-title">Basic Settings</div>
+          <div class="form-group">
+            <label>Card Title</label>
+            <input type="text" id="title" value="${this._config.title || 'YAWC Weather'}">
+          </div>
+          <div class="form-group">
+            <label>Update Interval (minutes)</label>
+            <input type="number" id="update_interval_min" value="${(this._config.update_interval || 300000) / 60000}" min="1" max="60">
+          </div>
+        </div>
+        
+        <div class="section">
+          <div class="section-title">Location Settings</div>
+          <div class="grid-2">
+            <div class="form-group">
+              <label>Latitude (optional)</label>
+              <input type="number" id="latitude" value="${this._config.latitude || ''}" placeholder="Auto" step="0.0001">
+            </div>
+            <div class="form-group">
+              <label>Longitude (optional)</label>
+              <input type="number" id="longitude" value="${this._config.longitude || ''}" placeholder="Auto" step="0.0001">
+            </div>
+          </div>
+        </div>
+        
+        <div class="section">
+          <div class="section-title">Display Options</div>
+          <label class="checkbox-label">
+            <input type="checkbox" id="show_radar" ${this._config.show_radar !== false ? 'checked' : ''}>
+            Show Windy Radar
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="show_alerts" ${this._config.show_alerts !== false ? 'checked' : ''}>
+            Show Weather Alerts
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="show_hourly" ${this._config.show_hourly !== false ? 'checked' : ''}>
+            Show Hourly Forecast
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="show_forecast" ${this._config.show_forecast !== false ? 'checked' : ''}>
+            Show Extended Forecast
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="show_branding" ${this._config.show_branding !== false ? 'checked' : ''}>
+            Show YAWC Branding
+          </label>
+        </div>
+        
+        <div class="section">
+          <div class="section-title">Radar Settings</div>
+          <div class="form-group">
+            <label>Radar Zoom Level</label>
+            <input type="number" id="radar_zoom" value="${this._config.radar_zoom || 7}" min="5" max="10">
+          </div>
+          <div class="form-group">
+            <label>Radar Height (pixels)</label>
+            <input type="number" id="radar_height" value="${this._config.radar_height || 450}" min="300" max="600" step="50">
+          </div>
+        </div>
+        
+        <div class="section">
+          <div class="section-title">Forecast Settings</div>
+          <div class="form-group">
+            <label>Forecast Days</label>
+            <input type="number" id="forecast_days" value="${this._config.forecast_days || 5}" min="1" max="7">
+          </div>
+        </div>
+        
+        <div class="info-box">
+          <div class="info-title">🌟 YAWC v3.2 Features</div>
+          <div class="info-content">
+            ✓ Stable Windy.com radar that doesn't refresh<br>
+            ✓ Real-time NWS weather data<br>
+            ✓ Weather alerts with severity levels<br>
+            ✓ 12-hour hourly forecast with precipitation<br>
+            ✓ Extended daily forecast<br>
+            ✓ Interactive radar with multiple layers<br>
+            ✓ Auto-updates without refreshing radar
+          </div>
+        </div>
+      </div>
+    `;
+    
+    this.attachListeners();
+  }
+
+  attachListeners() {
+    // Text and number inputs
+    const inputs = ['title', 'latitude', 'longitude', 'radar_zoom', 'radar_height', 'forecast_days'];
+    inputs.forEach(id => {
+      const input = this.shadowRoot.getElementById(id);
+      if (input) {
+        input.addEventListener('input', (e) => {
+          let value = e.target.value;
+          if (['latitude', 'longitude'].includes(id)) {
+            value = value ? parseFloat(value) : null;
+          } else if (['radar_zoom', 'radar_height', 'forecast_days'].includes(id)) {
+            value = parseInt(value) || (id === 'radar_zoom' ? 7 : id === 'radar_height' ? 450 : 5);
+          }
+          this.updateConfig(id, value);
+        });
+      }
+    });
+    
+    // Special handling for update interval
+    const updateIntervalInput = this.shadowRoot.getElementById('update_interval_min');
+    if (updateIntervalInput) {
+      updateIntervalInput.addEventListener('input', (e) => {
+        const minutes = parseInt(e.target.value) || 5;
+        this.updateConfig('update_interval', minutes * 60000);
+      });
+    }
+    
+    // Checkboxes
+    const checkboxes = ['show_radar', 'show_alerts', 'show_hourly', 'show_forecast', 'show_branding'];
+    checkboxes.forEach(id => {
+      const checkbox = this.shadowRoot.getElementById(id);
+      if (checkbox) {
+        checkbox.addEventListener('change', (e) => {
+          this.updateConfig(id, e.target.checked);
+        });
+      }
+    });
+  }
+
+  updateConfig(key, value) {
+    this._config = { ...this._config, [key]: value };
+    this.configChanged(this._config);
+  }
+}
+
+// Register the components
 customElements.define('yawc-card', YetAnotherWeatherCard);
+customElements.define('yawc-card-editor', YawcCardEditor);
+
+// Register with HACS
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: 'yawc-card',
-  name: 'YAWC v3.1',
-  description: 'Weather card with stable Windy radar'
+  name: 'YAWC - Yet Another Weather Card',
+  description: 'NWS weather card with stable Windy radar',
+  preview: false,
+  documentationURL: 'https://github.com/cnewman402/yawc'
 });
-console.log('YAWC v3.1 - Stable Windy implementation!');
+
+console.log('YAWC v3.2 - Complete with Configuration Editor!');
