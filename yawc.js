@@ -5,7 +5,7 @@ class YetAnotherWeatherCard extends HTMLElement {
     this._config = {};
     this._weatherData = null;
     this._updateInterval = null;
-    this._radarFrame = 0;
+    this._hasRenderedRadar = false;
   }
 
   setConfig(config) {
@@ -17,9 +17,9 @@ class YetAnotherWeatherCard extends HTMLElement {
       show_forecast: config.show_forecast !== false,
       show_hourly: config.show_hourly !== false,
       show_radar: config.show_radar !== false,
-      radar_type: config.radar_type || 'rainviewer', // 'rainviewer', 'openweather', 'weatherapi', or 'windy'
       forecast_days: config.forecast_days || 5,
-      radar_zoom: config.radar_zoom || 6,
+      radar_zoom: config.radar_zoom || 7,
+      radar_height: config.radar_height || 450,
       latitude: config.latitude || null,
       longitude: config.longitude || null
     };
@@ -28,16 +28,23 @@ class YetAnotherWeatherCard extends HTMLElement {
   set hass(hass) {
     this._hass = hass;
     if (!this._weatherData) this.fetchWeatherData();
-    this.render();
+    else this.updateWeatherOnly(); // Update weather without touching radar
     this.startUpdateInterval();
   }
 
-  connectedCallback() { this.startUpdateInterval(); }
-  disconnectedCallback() { this.stopUpdateInterval(); }
+  connectedCallback() { 
+    this.startUpdateInterval();
+    this._hasRenderedRadar = false;
+  }
+  
+  disconnectedCallback() { 
+    this.stopUpdateInterval();
+    this._hasRenderedRadar = false;
+  }
 
   startUpdateInterval() {
     this.stopUpdateInterval();
-    this._updateInterval = setInterval(() => this.fetchWeatherData(), this._config.update_interval);
+    this._updateInterval = setInterval(() => this.fetchWeatherData(true), this._config.update_interval);
   }
 
   stopUpdateInterval() {
@@ -47,7 +54,7 @@ class YetAnotherWeatherCard extends HTMLElement {
     }
   }
 
-  async fetchWeatherData() {
+  async fetchWeatherData(isUpdate = false) {
     if (!this._hass) return;
     const lat = this._config.latitude || this._hass.config.latitude;
     const lon = this._config.longitude || this._hass.config.longitude;
@@ -79,7 +86,12 @@ class YetAnotherWeatherCard extends HTMLElement {
         radarStation: props.radarStation,
         lastUpdated: new Date()
       };
-      this.render();
+      
+      if (isUpdate) {
+        this.updateWeatherOnly();
+      } else {
+        this.render();
+      }
     } catch (error) {
       console.error('Weather fetch error:', error);
       this._weatherData = { error: error.message, lastUpdated: new Date() };
@@ -101,74 +113,82 @@ class YetAnotherWeatherCard extends HTMLElement {
     return null;
   }
 
-  async loadRainViewerRadar() {
-    try {
-      const apiData = await fetch("https://api.rainviewer.com/public/weather-maps.json").then(r => r.json());
-      return apiData;
-    } catch (e) {
-      console.error('RainViewer API error:', e);
-      return null;
+  updateWeatherOnly() {
+    // Only update weather sections without touching radar
+    if (!this._weatherData || this._weatherData.error) {
+      this.render();
+      return;
+    }
+    
+    // Update only specific sections
+    const headerEl = this.shadowRoot.querySelector('.header .upd');
+    if (headerEl) {
+      const upd = this._weatherData.lastUpdated?.toLocaleTimeString() || '';
+      headerEl.innerHTML = `Updated: ${upd} <button class="refresh-btn">↻</button>`;
+      headerEl.querySelector('.refresh-btn').addEventListener('click', () => this.fetchWeatherData());
+    }
+    
+    const currentEl = this.shadowRoot.querySelector('.current');
+    if (currentEl) {
+      currentEl.outerHTML = this.current();
+    }
+    
+    const alertsEl = this.shadowRoot.querySelector('.alerts');
+    const alertsHtml = this.alerts();
+    if (alertsEl && alertsHtml) {
+      alertsEl.outerHTML = alertsHtml;
+    } else if (!alertsEl && alertsHtml) {
+      const headerEl = this.shadowRoot.querySelector('.header');
+      if (headerEl) {
+        headerEl.insertAdjacentHTML('afterend', alertsHtml);
+      }
+    } else if (alertsEl && !alertsHtml) {
+      alertsEl.remove();
+    }
+    
+    const hourlyEl = this.shadowRoot.querySelector('.hourly');
+    if (hourlyEl && this._config.show_hourly) {
+      hourlyEl.outerHTML = this.hourly();
+    }
+    
+    const forecastEl = this.shadowRoot.querySelector('.forecast');
+    if (forecastEl && this._config.show_forecast) {
+      forecastEl.outerHTML = this.forecast();
     }
   }
 
   render() {
     if (!this._hass) return;
+    
     let h = `<style>${this.css()}</style>`;
     if (!this._weatherData) {
       h += `<ha-card><div class="loading">Loading Weather Data...</div></ha-card>`;
+      this.shadowRoot.innerHTML = h;
+      return;
     } else if (this._weatherData.error) {
       h += `<ha-card><div class="error">Error: ${this._weatherData.error}</div></ha-card>`;
-    } else {
-      h += '<ha-card>';
-      h += this.header();
-      if (this._config.show_alerts) h += this.alerts();
-      h += this.current();
-      if (this._config.show_radar) h += this.radar();
-      if (this._config.show_hourly) h += this.hourly();
-      if (this._config.show_forecast) h += this.forecast();
-      h += `<div class="footer">Data: National Weather Service | YAWC v3.0</div>`;
-      h += '</ha-card>';
+      this.shadowRoot.innerHTML = h;
+      return;
     }
-    this.shadowRoot.innerHTML = h;
     
-    // Setup radar animation if using RainViewer
-    if (this._config.show_radar && this._config.radar_type === 'rainviewer') {
-      this.setupRainViewerAnimation();
+    h += '<ha-card>';
+    h += this.header();
+    if (this._config.show_alerts) h += this.alerts();
+    h += this.current();
+    if (this._config.show_radar) h += this.radar();
+    if (this._config.show_hourly) h += this.hourly();
+    if (this._config.show_forecast) h += this.forecast();
+    h += `<div class="footer">Data: National Weather Service | YAWC v3.1</div>`;
+    h += '</ha-card>';
+    
+    this.shadowRoot.innerHTML = h;
+    this._hasRenderedRadar = true;
+    
+    // Add refresh button listener
+    const refreshBtn = this.shadowRoot.querySelector('.refresh-btn');
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', () => this.fetchWeatherData());
     }
-  }
-
-  setupRainViewerAnimation() {
-    this.loadRainViewerRadar().then(data => {
-      if (!data || !data.radar || !data.radar.past) return;
-      
-      const timestamps = data.radar.past.slice(-6); // Last 6 frames
-      let frameIndex = 0;
-      
-      const animate = () => {
-        const img = this.shadowRoot.querySelector('.radar-animated');
-        if (!img) return;
-        
-        const lat = this._weatherData.coords.lat;
-        const lon = this._weatherData.coords.lon;
-        const zoom = this._config.radar_zoom;
-        const size = 512;
-        
-        // Calculate tile coordinates
-        const x = Math.floor((lon + 180) / 360 * Math.pow(2, zoom));
-        const y = Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, zoom));
-        
-        const timestamp = timestamps[frameIndex].path;
-        const radarUrl = `https://tilecache.rainviewer.com${timestamp}/${size}/${zoom}/${x}/${y}/4/1_1.png`;
-        
-        img.src = radarUrl;
-        frameIndex = (frameIndex + 1) % timestamps.length;
-      };
-      
-      // Initial frame
-      animate();
-      // Animation loop
-      setInterval(animate, 500);
-    });
   }
 
   header() {
@@ -176,7 +196,7 @@ class YetAnotherWeatherCard extends HTMLElement {
     return `<div class="header">
       <div class="title">${this._config.title}</div>
       <div class="upd">Updated: ${upd} 
-        <button onclick="this.getRootNode().host.fetchWeatherData()">↻</button>
+        <button class="refresh-btn">↻</button>
       </div>
     </div>`;
   }
@@ -242,75 +262,29 @@ class YetAnotherWeatherCard extends HTMLElement {
   radar() {
     const lat = this._weatherData.coords.lat;
     const lon = this._weatherData.coords.lon;
-    const st = this._weatherData.radarStation || 'KLOT';
     const zoom = this._config.radar_zoom;
+    const height = this._config.radar_height;
     
-    let h = `<div class="radar">
-      <div class="sec-hdr">Weather Radar - ${this._config.radar_type}</div>`;
+    // Windy embed URL
+    const windyUrl = `https://embed.windy.com/embed2.html?lat=${lat}&lon=${lon}&detailLat=${lat}&detailLon=${lon}&width=650&height=${height}&zoom=${zoom}&level=surface&overlay=radar&product=radar&menu=&message=&marker=true&calendar=now&pressure=&type=map&location=coordinates&detail=&metricWind=mph&metricTemp=%C2%B0F&radarRange=-1`;
     
-    if (this._config.radar_type === 'rainviewer') {
-      // RainViewer animated radar (most reliable)
-      h += `<div class="radar-container">
-        <div class="radar-map-container">
-          <img class="radar-base-map" 
-               src="https://tile.openstreetmap.org/${zoom}/${Math.floor((lon + 180) / 360 * Math.pow(2, zoom))}/${Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, zoom))}.png"
-               alt="Map">
-          <img class="radar-animated" alt="Radar">
-          <div class="radar-center">📍</div>
-        </div>
-      </div>
-      <div class="radar-note">RainViewer Animated Radar - Updates every 10 minutes</div>`;
-      
-    } else if (this._config.radar_type === 'openweather') {
-      // OpenWeatherMap radar tile
-      const x = Math.floor((lon + 180) / 360 * Math.pow(2, zoom));
-      const y = Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, zoom));
-      
-      h += `<div class="radar-container">
-        <div class="radar-map-container">
-          <img class="radar-base-map" 
-               src="https://tile.openstreetmap.org/${zoom}/${x}/${y}.png"
-               alt="Map">
-          <img class="radar-overlay" 
-               src="https://tile.openweathermap.org/map/precipitation_new/${zoom}/${x}/${y}.png?appid=1d19bf757e44e8c8bbdaae67ccb8bdcd"
-               alt="Precipitation">
-          <div class="radar-center">📍</div>
-        </div>
-      </div>
-      <div class="radar-note">OpenWeatherMap Precipitation</div>`;
-      
-    } else if (this._config.radar_type === 'weatherapi') {
-      // WeatherAPI.com static radar
-      h += `<div class="radar-container">
-        <img class="radar-static" 
-             src="https://maps.weatherapi.com/v1/radar/map.jpg?key=demo&q=${lat},${lon}&zoom=${zoom}&size=600x400"
-             alt="Weather Radar"
-             onerror="this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2MDAiIGhlaWdodD0iNDAwIj48cmVjdCB3aWR0aD0iNjAwIiBoZWlnaHQ9IjQwMCIgZmlsbD0iIzFhMWExYSIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmaWxsPSIjNjY2IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LXNpemU9IjE4Ij5SYWRhciBVbmF2YWlsYWJsZTwvdGV4dD48L3N2Zz4='">
-      </div>
-      <div class="radar-note">WeatherAPI Radar Map</div>`;
-      
-    } else if (this._config.radar_type === 'windy') {
-      // Windy embed (works but has console errors)
-      h += `<div class="radar-container">
+    return `<div class="radar">
+      <div class="sec-hdr">Windy.com Interactive Radar</div>
+      <div class="radar-container">
         <iframe 
+          class="windy-iframe"
           width="100%" 
-          height="450" 
-          src="https://embed.windy.com/embed2.html?lat=${lat}&lon=${lon}&detailLat=${lat}&detailLon=${lon}&width=650&height=450&zoom=7&level=surface&overlay=radar&product=radar&menu=&message=&marker=&calendar=now&pressure=&type=map&location=coordinates&detail=&metricWind=mph&metricTemp=%C2%B0F&radarRange=-1" 
+          height="${height}" 
+          src="${windyUrl}" 
           frameborder="0"
           style="border: 0; border-radius: 8px;">
         </iframe>
       </div>
-      <div class="radar-note">Windy.com Interactive (may show console errors)</div>`;
-    }
-    
-    h += `<div class="links">
-      <a href="https://www.rainviewer.com/map.html?loc=${lat},${lon},${zoom}" target="_blank">RainViewer</a>
-      <a href="https://www.windy.com/?radar,${lat},${lon},8" target="_blank">Windy</a>
-      <a href="https://radar.weather.gov" target="_blank">NWS</a>
-      <a href="https://zoom.earth/storms/${lat},${lon},7z" target="_blank">Zoom Earth</a>
-    </div></div>`;
-    
-    return h;
+      <div class="radar-note">
+        <span>Interactive radar with pan, zoom, and layer controls</span>
+        <span class="radar-tip">• Click and drag to pan • Scroll to zoom • Use controls for layers</span>
+      </div>
+    </div>`;
   }
 
   hourly() {
@@ -375,7 +349,7 @@ ha-card { background: var(--card-background-color); border-radius: var(--ha-card
 .header { display: flex; justify-content: space-between; align-items: center; padding: 16px; border-bottom: 1px solid var(--divider-color); }
 .title { font-size: 20px; font-weight: 500; }
 .upd { font-size: 12px; color: var(--secondary-text-color); display: flex; align-items: center; gap: 8px; }
-.upd button { background: none; border: none; font-size: 16px; cursor: pointer; padding: 0; color: var(--primary-text-color); }
+.refresh-btn { background: none; border: none; font-size: 16px; cursor: pointer; padding: 0; color: var(--primary-text-color); }
 .alerts { margin: 16px; }
 .alert { padding: 12px; margin-bottom: 8px; border-radius: 8px; color: white; }
 .alert.severe { background: #d32f2f; }
@@ -395,16 +369,10 @@ ha-card { background: var(--card-background-color); border-radius: var(--ha-card
 .det b { font-size: 14px; }
 .sec-hdr { font-size: 16px; font-weight: 500; margin: 16px 16px 12px; padding: 8px 12px; background: var(--secondary-background-color); border-radius: 4px; }
 .radar { margin: 16px; }
-.radar-container { background: #1a1a1a; border-radius: 8px; overflow: hidden; position: relative; min-height: 400px; }
-.radar-map-container { position: relative; width: 100%; height: 400px; display: flex; align-items: center; justify-content: center; }
-.radar-base-map { position: absolute; width: 100%; height: 100%; object-fit: cover; opacity: 0.6; }
-.radar-overlay, .radar-animated { position: absolute; width: 100%; height: 100%; object-fit: cover; }
-.radar-static { width: 100%; height: auto; display: block; }
-.radar-center { position: absolute; font-size: 24px; filter: drop-shadow(0 0 4px rgba(0,0,0,0.8)); }
-.radar-note { text-align: center; font-size: 12px; color: var(--secondary-text-color); margin-top: 8px; }
-.links { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
-.links a { padding: 8px 12px; background: var(--primary-color); color: white; text-decoration: none; border-radius: 4px; font-size: 13px; }
-.links a:hover { opacity: 0.9; }
+.radar-container { background: #1a1a1a; border-radius: 8px; overflow: hidden; position: relative; }
+.windy-iframe { display: block; }
+.radar-note { text-align: center; font-size: 12px; color: var(--secondary-text-color); margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+.radar-tip { font-size: 11px; opacity: 0.8; }
 .hourly { margin: 16px; }
 .h-scroll { display: flex; gap: 8px; overflow-x: auto; padding: 8px 0; }
 .h-item { min-width: 70px; padding: 10px 8px; background: var(--secondary-background-color); border-radius: 8px; text-align: center; }
@@ -427,14 +395,16 @@ ha-card { background: var(--card-background-color); border-radius: var(--ha-card
 }`;
   }
 
-  getCardSize() { return this._config.show_radar ? 9 : 6; }
+  getCardSize() { 
+    return this._config.show_radar ? 9 : 6; 
+  }
   
   static getStubConfig() { 
     return { 
       title: 'YAWC Weather', 
-      show_radar: true, 
-      radar_type: 'rainviewer',
-      radar_zoom: 6
+      show_radar: true,
+      radar_zoom: 7,
+      radar_height: 450
     }; 
   }
 }
@@ -443,7 +413,7 @@ customElements.define('yawc-card', YetAnotherWeatherCard);
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: 'yawc-card',
-  name: 'YAWC v3.0',
-  description: 'Weather card with multiple working radar options'
+  name: 'YAWC v3.1',
+  description: 'Weather card with stable Windy radar'
 });
-console.log('YAWC v3.0 - Multiple radar sources!');
+console.log('YAWC v3.1 - Stable Windy implementation!');
