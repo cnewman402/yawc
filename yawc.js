@@ -5,6 +5,7 @@ class YetAnotherWeatherCard extends HTMLElement {
     this._config = {};
     this._weatherData = null;
     this._updateInterval = null;
+    this._radarFrame = 0;
   }
 
   setConfig(config) {
@@ -16,9 +17,9 @@ class YetAnotherWeatherCard extends HTMLElement {
       show_forecast: config.show_forecast !== false,
       show_hourly: config.show_hourly !== false,
       show_radar: config.show_radar !== false,
-      radar_type: config.radar_type || 'composite', // 'composite', 'windy', or 'links'
+      radar_type: config.radar_type || 'rainviewer', // 'rainviewer', 'openweather', 'weatherapi', or 'windy'
       forecast_days: config.forecast_days || 5,
-      radar_height: config.radar_height || 450,
+      radar_zoom: config.radar_zoom || 6,
       latitude: config.latitude || null,
       longitude: config.longitude || null
     };
@@ -100,6 +101,16 @@ class YetAnotherWeatherCard extends HTMLElement {
     return null;
   }
 
+  async loadRainViewerRadar() {
+    try {
+      const apiData = await fetch("https://api.rainviewer.com/public/weather-maps.json").then(r => r.json());
+      return apiData;
+    } catch (e) {
+      console.error('RainViewer API error:', e);
+      return null;
+    }
+  }
+
   render() {
     if (!this._hass) return;
     let h = `<style>${this.css()}</style>`;
@@ -115,28 +126,49 @@ class YetAnotherWeatherCard extends HTMLElement {
       if (this._config.show_radar) h += this.radar();
       if (this._config.show_hourly) h += this.hourly();
       if (this._config.show_forecast) h += this.forecast();
-      h += `<div class="footer">Data: National Weather Service | YAWC v2.6.0</div>`;
+      h += `<div class="footer">Data: National Weather Service | YAWC v3.0</div>`;
       h += '</ha-card>';
     }
     this.shadowRoot.innerHTML = h;
     
-    // Add event listener for radar refresh if using composite
-    if (this._config.show_radar && this._config.radar_type === 'composite') {
-      this.setupRadarRefresh();
+    // Setup radar animation if using RainViewer
+    if (this._config.show_radar && this._config.radar_type === 'rainviewer') {
+      this.setupRainViewerAnimation();
     }
   }
 
-  setupRadarRefresh() {
-    const btn = this.shadowRoot.querySelector('.radar-refresh');
-    if (btn) {
-      btn.addEventListener('click', () => {
-        const img = this.shadowRoot.querySelector('.radar-img');
-        if (img) {
-          const baseUrl = img.src.split('?t=')[0];
-          img.src = baseUrl + '?t=' + Date.now();
-        }
-      });
-    }
+  setupRainViewerAnimation() {
+    this.loadRainViewerRadar().then(data => {
+      if (!data || !data.radar || !data.radar.past) return;
+      
+      const timestamps = data.radar.past.slice(-6); // Last 6 frames
+      let frameIndex = 0;
+      
+      const animate = () => {
+        const img = this.shadowRoot.querySelector('.radar-animated');
+        if (!img) return;
+        
+        const lat = this._weatherData.coords.lat;
+        const lon = this._weatherData.coords.lon;
+        const zoom = this._config.radar_zoom;
+        const size = 512;
+        
+        // Calculate tile coordinates
+        const x = Math.floor((lon + 180) / 360 * Math.pow(2, zoom));
+        const y = Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, zoom));
+        
+        const timestamp = timestamps[frameIndex].path;
+        const radarUrl = `https://tilecache.rainviewer.com${timestamp}/${size}/${zoom}/${x}/${y}/4/1_1.png`;
+        
+        img.src = radarUrl;
+        frameIndex = (frameIndex + 1) % timestamps.length;
+      };
+      
+      // Initial frame
+      animate();
+      // Animation loop
+      setInterval(animate, 500);
+    });
   }
 
   header() {
@@ -211,50 +243,70 @@ class YetAnotherWeatherCard extends HTMLElement {
     const lat = this._weatherData.coords.lat;
     const lon = this._weatherData.coords.lon;
     const st = this._weatherData.radarStation || 'KLOT';
+    const zoom = this._config.radar_zoom;
     
     let h = `<div class="radar">
-      <div class="sec-hdr">Weather Radar</div>`;
+      <div class="sec-hdr">Weather Radar - ${this._config.radar_type}</div>`;
     
-    if (this._config.radar_type === 'windy') {
-      // Windy embed (may have SSE errors but works)
+    if (this._config.radar_type === 'rainviewer') {
+      // RainViewer animated radar (most reliable)
+      h += `<div class="radar-container">
+        <div class="radar-map-container">
+          <img class="radar-base-map" 
+               src="https://tile.openstreetmap.org/${zoom}/${Math.floor((lon + 180) / 360 * Math.pow(2, zoom))}/${Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, zoom))}.png"
+               alt="Map">
+          <img class="radar-animated" alt="Radar">
+          <div class="radar-center">📍</div>
+        </div>
+      </div>
+      <div class="radar-note">RainViewer Animated Radar - Updates every 10 minutes</div>`;
+      
+    } else if (this._config.radar_type === 'openweather') {
+      // OpenWeatherMap radar tile
+      const x = Math.floor((lon + 180) / 360 * Math.pow(2, zoom));
+      const y = Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, zoom));
+      
+      h += `<div class="radar-container">
+        <div class="radar-map-container">
+          <img class="radar-base-map" 
+               src="https://tile.openstreetmap.org/${zoom}/${x}/${y}.png"
+               alt="Map">
+          <img class="radar-overlay" 
+               src="https://tile.openweathermap.org/map/precipitation_new/${zoom}/${x}/${y}.png?appid=1d19bf757e44e8c8bbdaae67ccb8bdcd"
+               alt="Precipitation">
+          <div class="radar-center">📍</div>
+        </div>
+      </div>
+      <div class="radar-note">OpenWeatherMap Precipitation</div>`;
+      
+    } else if (this._config.radar_type === 'weatherapi') {
+      // WeatherAPI.com static radar
+      h += `<div class="radar-container">
+        <img class="radar-static" 
+             src="https://maps.weatherapi.com/v1/radar/map.jpg?key=demo&q=${lat},${lon}&zoom=${zoom}&size=600x400"
+             alt="Weather Radar"
+             onerror="this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2MDAiIGhlaWdodD0iNDAwIj48cmVjdCB3aWR0aD0iNjAwIiBoZWlnaHQ9IjQwMCIgZmlsbD0iIzFhMWExYSIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmaWxsPSIjNjY2IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LXNpemU9IjE4Ij5SYWRhciBVbmF2YWlsYWJsZTwvdGV4dD48L3N2Zz4='">
+      </div>
+      <div class="radar-note">WeatherAPI Radar Map</div>`;
+      
+    } else if (this._config.radar_type === 'windy') {
+      // Windy embed (works but has console errors)
       h += `<div class="radar-container">
         <iframe 
           width="100%" 
-          height="${this._config.radar_height}" 
-          src="https://embed.windy.com/embed2.html?lat=${lat}&lon=${lon}&detailLat=${lat}&detailLon=${lon}&width=650&height=${this._config.radar_height}&zoom=7&level=surface&overlay=radar&product=radar&menu=&message=&marker=&calendar=now&pressure=&type=map&location=coordinates&detail=&metricWind=mph&metricTemp=%C2%B0F&radarRange=-1" 
+          height="450" 
+          src="https://embed.windy.com/embed2.html?lat=${lat}&lon=${lon}&detailLat=${lat}&detailLon=${lon}&width=650&height=450&zoom=7&level=surface&overlay=radar&product=radar&menu=&message=&marker=&calendar=now&pressure=&type=map&location=coordinates&detail=&metricWind=mph&metricTemp=%C2%B0F&radarRange=-1" 
           frameborder="0"
           style="border: 0; border-radius: 8px;">
         </iframe>
       </div>
-      <div class="radar-note">Windy.com Interactive Radar (may show console errors)</div>`;
-    } else if (this._config.radar_type === 'composite') {
-      // Use NOAA WMS composite radar image (most reliable)
-      const bbox = `${lon - 2.5},${lat - 2},${lon + 2.5},${lat + 2}`;
-      const radarUrl = `https://opengeo.ncep.noaa.gov/geoserver/conus/conus_bref_qcd/ows?service=WMS&version=1.3.0&request=GetMap&layers=conus_bref_qcd&bbox=${bbox}&width=600&height=400&srs=EPSG:4326&format=image/png&transparent=true`;
-      
-      h += `<div class="radar-container">
-        <img class="radar-img" 
-             src="${radarUrl}?t=${Date.now()}" 
-             alt="NOAA Composite Radar"
-             onerror="this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2MDAiIGhlaWdodD0iNDAwIj48cmVjdCB3aWR0aD0iNjAwIiBoZWlnaHQ9IjQwMCIgZmlsbD0iIzFhMWExYSIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmaWxsPSIjNjY2IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LXNpemU9IjE4IiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiI+UmFkYXIgVGVtcG9yYXJpbHkgVW5hdmFpbGFibGU8L3RleHQ+PHRleHQgeD0iNTAlIiB5PSI2MCUiIGZpbGw9IiM2NjYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtc2l6ZT0iMTQiIGZvbnQtZmFtaWx5PSJzYW5zLXNlcmlmIj5Vc2UgbGlua3MgYmVsb3cgZm9yIGFsdGVybmF0aXZlczwvdGV4dD48L3N2Zz4='">
-        <button class="radar-refresh">↻ Refresh</button>
-      </div>
-      <div class="radar-note">NOAA Composite Radar - Updates every 5-10 minutes</div>`;
-    } else {
-      // Links only mode
-      h += `<div class="radar-placeholder">
-        <div class="radar-placeholder-text">
-          <div>📡 Radar Station: ${st}</div>
-          <div>Click any link below to view radar:</div>
-        </div>
-      </div>`;
+      <div class="radar-note">Windy.com Interactive (may show console errors)</div>`;
     }
     
     h += `<div class="links">
-      <a href="https://radar.weather.gov/station/${st}" target="_blank">NWS Radar</a>
-      <a href="https://www.windy.com/?radar,${lat},${lon},8" target="_blank">Windy.com</a>
-      <a href="https://weather.com/weather/radar/interactive/l/${lat},${lon}" target="_blank">Weather.com</a>
-      <a href="https://www.wunderground.com/radar/us/${st.toLowerCase()}" target="_blank">WUnderground</a>
+      <a href="https://www.rainviewer.com/map.html?loc=${lat},${lon},${zoom}" target="_blank">RainViewer</a>
+      <a href="https://www.windy.com/?radar,${lat},${lon},8" target="_blank">Windy</a>
+      <a href="https://radar.weather.gov" target="_blank">NWS</a>
       <a href="https://zoom.earth/storms/${lat},${lon},7z" target="_blank">Zoom Earth</a>
     </div></div>`;
     
@@ -307,8 +359,6 @@ class YetAnotherWeatherCard extends HTMLElement {
     if (c.includes('snow')) return '❄️';
     if (c.includes('fog') || c.includes('mist')) return '🌫️';
     if (c.includes('wind')) return '💨';
-    if (c.includes('hot')) return '🔥';
-    if (c.includes('cold')) return '🥶';
     return '🌡️';
   }
 
@@ -319,293 +369,72 @@ class YetAnotherWeatherCard extends HTMLElement {
 
   css() {
     return `
-ha-card {
-  background: var(--card-background-color);
-  border-radius: var(--ha-card-border-radius);
-  overflow: hidden;
-}
-.loading, .error {
-  padding: 20px;
-  text-align: center;
-  font-size: 14px;
-}
-.error {
-  color: var(--error-color);
-}
-.header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px;
-  border-bottom: 1px solid var(--divider-color);
-}
-.title {
-  font-size: 20px;
-  font-weight: 500;
-}
-.upd {
-  font-size: 12px;
-  color: var(--secondary-text-color);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.upd button {
-  background: none;
-  border: none;
-  font-size: 16px;
-  cursor: pointer;
-  padding: 0;
-  color: var(--primary-text-color);
-}
-.alerts {
-  margin: 16px;
-}
-.alert {
-  padding: 12px;
-  margin-bottom: 8px;
-  border-radius: 8px;
-  color: white;
-}
-.alert.severe {
-  background: #d32f2f;
-}
-.alert.moderate {
-  background: #f57c00;
-}
-.alert.minor {
-  background: #1976d2;
-}
-.alert-title {
-  font-weight: bold;
-  margin-bottom: 4px;
-}
-.alert-desc {
-  font-size: 13px;
-  opacity: 0.95;
-}
-.current {
-  margin: 16px;
-}
-.main {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  margin-bottom: 16px;
-}
-.temp-block {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.temp {
-  font-size: 48px;
-  font-weight: 300;
-  line-height: 1;
-}
-.icon {
-  font-size: 36px;
-}
-.cond {
-  font-size: 18px;
-  flex: 1;
-}
-.details {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 8px;
-}
-.det {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 12px;
-  background: var(--secondary-background-color);
-  border-radius: 8px;
-}
-.det span {
-  color: var(--secondary-text-color);
-  font-size: 13px;
-}
-.det b {
-  font-size: 14px;
-}
-.sec-hdr {
-  font-size: 16px;
-  font-weight: 500;
-  margin: 16px 16px 12px;
-  padding: 8px 12px;
-  background: var(--secondary-background-color);
-  border-radius: 4px;
-}
-.radar {
-  margin: 16px;
-}
-.radar-container {
-  background: #1a1a1a;
-  border-radius: 8px;
-  overflow: hidden;
-  position: relative;
-  min-height: 400px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.radar-img {
-  width: 100%;
-  height: auto;
-  display: block;
-}
-.radar-refresh {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  padding: 8px 12px;
-  background: rgba(0,0,0,0.8);
-  color: white;
-  border: 1px solid rgba(255,255,255,0.2);
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 13px;
-}
-.radar-refresh:hover {
-  background: rgba(0,0,0,0.95);
-  border-color: rgba(255,255,255,0.4);
-}
-.radar-placeholder {
-  padding: 60px 20px;
-  background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
-  border-radius: 8px;
-  text-align: center;
-}
-.radar-placeholder-text {
-  color: #888;
-  font-size: 14px;
-}
-.radar-placeholder-text div {
-  margin: 8px 0;
-}
-.radar-note {
-  text-align: center;
-  font-size: 12px;
-  color: var(--secondary-text-color);
-  margin-top: 8px;
-}
-.links {
-  display: flex;
-  gap: 8px;
-  margin-top: 12px;
-  flex-wrap: wrap;
-}
-.links a {
-  padding: 8px 12px;
-  background: var(--primary-color);
-  color: white;
-  text-decoration: none;
-  border-radius: 4px;
-  font-size: 13px;
-}
-.links a:hover {
-  opacity: 0.9;
-}
-.hourly {
-  margin: 16px;
-}
-.h-scroll {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  padding: 8px 0;
-}
-.h-item {
-  min-width: 70px;
-  padding: 10px 8px;
-  background: var(--secondary-background-color);
-  border-radius: 8px;
-  text-align: center;
-}
-.h-time {
-  font-size: 12px;
-  color: var(--secondary-text-color);
-  margin-bottom: 4px;
-}
-.h-icon {
-  font-size: 20px;
-  margin: 4px 0;
-}
-.h-temp {
-  font-size: 16px;
-  font-weight: bold;
-  margin: 4px 0;
-}
-.h-pop {
-  font-size: 11px;
-  color: #2196f3;
-}
-.forecast {
-  margin: 16px;
-}
-.f-item {
-  display: grid;
-  grid-template-columns: 100px 30px 60px 1fr;
-  align-items: center;
-  padding: 12px;
-  border-bottom: 1px solid var(--divider-color);
-  gap: 8px;
-}
-.f-item:last-child {
-  border-bottom: none;
-}
-.f-name {
-  font-weight: 500;
-}
-.f-icon {
-  text-align: center;
-  font-size: 20px;
-}
-.f-temp {
-  text-align: center;
-  font-weight: bold;
-}
-.f-desc {
-  text-align: right;
-  color: var(--secondary-text-color);
-  font-size: 14px;
-}
-.footer {
-  padding: 12px 16px;
-  border-top: 1px solid var(--divider-color);
-  background: var(--secondary-background-color);
-  font-size: 11px;
-  color: var(--secondary-text-color);
-  text-align: center;
-}
+ha-card { background: var(--card-background-color); border-radius: var(--ha-card-border-radius); overflow: hidden; }
+.loading, .error { padding: 20px; text-align: center; }
+.error { color: var(--error-color); }
+.header { display: flex; justify-content: space-between; align-items: center; padding: 16px; border-bottom: 1px solid var(--divider-color); }
+.title { font-size: 20px; font-weight: 500; }
+.upd { font-size: 12px; color: var(--secondary-text-color); display: flex; align-items: center; gap: 8px; }
+.upd button { background: none; border: none; font-size: 16px; cursor: pointer; padding: 0; color: var(--primary-text-color); }
+.alerts { margin: 16px; }
+.alert { padding: 12px; margin-bottom: 8px; border-radius: 8px; color: white; }
+.alert.severe { background: #d32f2f; }
+.alert.moderate { background: #f57c00; }
+.alert.minor { background: #1976d2; }
+.alert-title { font-weight: bold; margin-bottom: 4px; }
+.alert-desc { font-size: 13px; opacity: 0.95; }
+.current { margin: 16px; }
+.main { display: flex; align-items: center; gap: 20px; margin-bottom: 16px; }
+.temp-block { display: flex; align-items: center; gap: 12px; }
+.temp { font-size: 48px; font-weight: 300; line-height: 1; }
+.icon { font-size: 36px; }
+.cond { font-size: 18px; flex: 1; }
+.details { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
+.det { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; background: var(--secondary-background-color); border-radius: 8px; }
+.det span { color: var(--secondary-text-color); font-size: 13px; }
+.det b { font-size: 14px; }
+.sec-hdr { font-size: 16px; font-weight: 500; margin: 16px 16px 12px; padding: 8px 12px; background: var(--secondary-background-color); border-radius: 4px; }
+.radar { margin: 16px; }
+.radar-container { background: #1a1a1a; border-radius: 8px; overflow: hidden; position: relative; min-height: 400px; }
+.radar-map-container { position: relative; width: 100%; height: 400px; display: flex; align-items: center; justify-content: center; }
+.radar-base-map { position: absolute; width: 100%; height: 100%; object-fit: cover; opacity: 0.6; }
+.radar-overlay, .radar-animated { position: absolute; width: 100%; height: 100%; object-fit: cover; }
+.radar-static { width: 100%; height: auto; display: block; }
+.radar-center { position: absolute; font-size: 24px; filter: drop-shadow(0 0 4px rgba(0,0,0,0.8)); }
+.radar-note { text-align: center; font-size: 12px; color: var(--secondary-text-color); margin-top: 8px; }
+.links { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.links a { padding: 8px 12px; background: var(--primary-color); color: white; text-decoration: none; border-radius: 4px; font-size: 13px; }
+.links a:hover { opacity: 0.9; }
+.hourly { margin: 16px; }
+.h-scroll { display: flex; gap: 8px; overflow-x: auto; padding: 8px 0; }
+.h-item { min-width: 70px; padding: 10px 8px; background: var(--secondary-background-color); border-radius: 8px; text-align: center; }
+.h-time { font-size: 12px; color: var(--secondary-text-color); margin-bottom: 4px; }
+.h-icon { font-size: 20px; margin: 4px 0; }
+.h-temp { font-size: 16px; font-weight: bold; margin: 4px 0; }
+.h-pop { font-size: 11px; color: #2196f3; }
+.forecast { margin: 16px; }
+.f-item { display: grid; grid-template-columns: 100px 30px 60px 1fr; align-items: center; padding: 12px; border-bottom: 1px solid var(--divider-color); gap: 8px; }
+.f-item:last-child { border-bottom: none; }
+.f-name { font-weight: 500; }
+.f-icon { text-align: center; font-size: 20px; }
+.f-temp { text-align: center; font-weight: bold; }
+.f-desc { text-align: right; color: var(--secondary-text-color); font-size: 14px; }
+.footer { padding: 12px 16px; border-top: 1px solid var(--divider-color); background: var(--secondary-background-color); font-size: 11px; color: var(--secondary-text-color); text-align: center; }
 @media (max-width: 600px) {
-  .main {
-    flex-direction: column;
-    text-align: center;
-  }
-  .details {
-    grid-template-columns: 1fr 1fr;
-  }
-  .f-item {
-    grid-template-columns: 80px 25px 50px 1fr;
-    font-size: 13px;
-  }
-}
-    `;
+  .main { flex-direction: column; text-align: center; }
+  .details { grid-template-columns: 1fr 1fr; }
+  .f-item { grid-template-columns: 80px 25px 50px 1fr; font-size: 13px; }
+}`;
   }
 
-  getCardSize() { 
-    return this._config.show_radar ? 9 : 6; 
-  }
+  getCardSize() { return this._config.show_radar ? 9 : 6; }
   
   static getStubConfig() { 
     return { 
       title: 'YAWC Weather', 
       show_radar: true, 
-      radar_type: 'composite',
-      radar_height: 450
+      radar_type: 'rainviewer',
+      radar_zoom: 6
     }; 
   }
 }
@@ -614,7 +443,7 @@ customElements.define('yawc-card', YetAnotherWeatherCard);
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: 'yawc-card',
-  name: 'YAWC - Yet Another Weather Card',
-  description: 'NWS weather card with working composite radar'
+  name: 'YAWC v3.0',
+  description: 'Weather card with multiple working radar options'
 });
-console.log('YAWC v2.6.0 Loaded - Fixed radar implementation!');
+console.log('YAWC v3.0 - Multiple radar sources!');
