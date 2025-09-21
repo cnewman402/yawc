@@ -1,4 +1,4 @@
-console.log('YAWC v2.3.0 - Working NWS Radar Implementation');
+console.log('YAWC v2.3.0 - Complete Working Version');
 
 class YetAnotherWeatherCard extends HTMLElement {
   constructor() {
@@ -7,10 +7,6 @@ class YetAnotherWeatherCard extends HTMLElement {
     this._config = {};
     this._weatherData = null;
     this._updateInterval = null;
-    this._radarInterval = null;
-    this._radarFrames = [];
-    this._currentRadarFrame = 0;
-    this._radarAnimating = false;
   }
 
   setConfig(config) {
@@ -28,9 +24,6 @@ class YetAnotherWeatherCard extends HTMLElement {
       show_branding: config.show_branding !== false,
       forecast_days: config.forecast_days || 5,
       radar_height: config.radar_height || 400,
-      radar_frames: config.radar_frames || 10,
-      radar_speed: config.radar_speed || 500,
-      radar_product: config.radar_product || 'bref_qcd', // Default to base reflectivity
       latitude: config.latitude || null,
       longitude: config.longitude || null
     };
@@ -47,20 +40,16 @@ class YetAnotherWeatherCard extends HTMLElement {
 
   connectedCallback() {
     this.startUpdateInterval();
-    if (this._config.show_radar) {
-      this.startRadarInterval();
-    }
   }
 
   disconnectedCallback() {
     this.stopUpdateInterval();
-    this.stopRadarInterval();
   }
 
   startUpdateInterval() {
     this.stopUpdateInterval();
-    var self = this;
-    this._updateInterval = setInterval(function() {
+    const self = this;
+    this._updateInterval = setInterval(() => {
       self.fetchWeatherData();
     }, this._config.update_interval);
   }
@@ -72,28 +61,11 @@ class YetAnotherWeatherCard extends HTMLElement {
     }
   }
 
-  startRadarInterval() {
-    this.stopRadarInterval();
-    var self = this;
-    // Update radar every 5 minutes
-    this._radarInterval = setInterval(function() {
-      self.loadRadarFrames();
-    }, 300000);
-  }
-
-  stopRadarInterval() {
-    if (this._radarInterval) {
-      clearInterval(this._radarInterval);
-      this._radarInterval = null;
-    }
-  }
-
-  fetchWeatherData() {
+  async fetchWeatherData() {
     if (!this._hass) return;
 
-    var self = this;
-    var latitude = this._config.latitude || this._hass.config.latitude;
-    var longitude = this._config.longitude || this._hass.config.longitude;
+    const latitude = this._config.latitude || this._hass.config.latitude;
+    const longitude = this._config.longitude || this._hass.config.longitude;
 
     if (!latitude || !longitude) {
       this._weatherData = { error: 'No coordinates available' };
@@ -101,220 +73,106 @@ class YetAnotherWeatherCard extends HTMLElement {
       return;
     }
 
-    var pointUrl = 'https://api.weather.gov/points/' + latitude + ',' + longitude;
-    
-    fetch(pointUrl)
-      .then(function(response) {
-        if (!response.ok) throw new Error('Failed to get NWS point data');
-        return response.json();
-      })
-      .then(function(pointData) {
-        var forecastUrl = pointData.properties.forecast;
-        var forecastHourlyUrl = pointData.properties.forecastHourly;
-        var observationStations = pointData.properties.observationStations;
-        var radarStation = pointData.properties.radarStation;
-
-        return Promise.all([
-          fetch(forecastUrl).then(function(r) { return r.json(); }),
-          fetch(forecastHourlyUrl).then(function(r) { return r.json(); }).catch(function() { return null; }),
-          fetch('https://api.weather.gov/alerts/active?point=' + latitude + ',' + longitude).then(function(r) { return r.json(); }).catch(function() { return null; }),
-          self.getCurrentObservations(observationStations)
-        ]).then(function(results) {
-          return {
-            results: results,
-            radarStation: radarStation
-          };
-        });
-      })
-      .then(function(data) {
-        var forecastData = data.results[0];
-        var hourlyData = data.results[1];
-        var alertsData = data.results[2];
-        var currentData = data.results[3];
-
-        self._weatherData = {
-          current: currentData,
-          forecast: forecastData.properties.periods,
-          hourly: hourlyData ? hourlyData.properties.periods : [],
-          alerts: alertsData ? alertsData.features : [],
-          coordinates: { latitude: latitude, longitude: longitude },
-          radarStation: data.radarStation,
-          lastUpdated: new Date()
-        };
-
-        self.render();
-        
-        // Load radar frames after weather data is available
-        if (self._config.show_radar && data.radarStation) {
-          self.loadRadarFrames();
-        }
-      })
-      .catch(function(error) {
-        console.error('Error fetching NWS weather data:', error);
-        self._weatherData = { 
-          error: error.message,
-          lastUpdated: new Date()
-        };
-        self.render();
-      });
-  }
-
-  getCurrentObservations(observationStations) {
-    return fetch(observationStations)
-      .then(function(response) { return response.json(); })
-      .then(function(stationsData) {
-        if (!stationsData.features || stationsData.features.length === 0) {
-          return null;
-        }
-        
-        var station = stationsData.features[0];
-        return fetch(station.id + '/observations/latest')
-          .then(function(response) {
-            if (response.ok) {
-              return response.json().then(function(obsData) {
-                return obsData.properties;
-              });
-            }
-            return null;
-          })
-          .catch(function() {
-            return null;
-          });
-      })
-      .catch(function() {
-        return null;
-      });
-  }
-
-  loadRadarFrames() {
-    if (!this._weatherData || !this._weatherData.radarStation) {
-      console.log('No radar station available');
-      return;
-    }
-
-    var station = this._weatherData.radarStation;
-    var self = this;
-    
-    // Clear existing frames
-    this._radarFrames = [];
-    
-    // Build iframe URL for NWS radar loop
-    // This uses the NWS radar page which handles its own imagery
-    var radarUrl = 'https://radar.weather.gov/ridge/standard/' + station + '_loop.gif';
-    
-    // Since we can't load images directly due to CORS, we'll use an iframe approach
-    var radarContainer = this.shadowRoot.querySelector('.radar-iframe-container');
-    if (radarContainer) {
-      // Use the embed.nullschool.net wind map as a working alternative
-      // Or use the NWS radar page in an iframe
-      var embedUrl = 'https://radar.weather.gov/ridge/standard/' + station;
+    try {
+      const pointUrl = `https://api.weather.gov/points/${latitude},${longitude}`;
+      const pointResponse = await fetch(pointUrl);
       
-      radarContainer.innerHTML = '<iframe src="' + embedUrl + '" ' +
-                                 'width="100%" ' +
-                                 'height="' + this._config.radar_height + '" ' +
-                                 'frameborder="0" ' +
-                                 'style="border:0;border-radius:8px;" ' +
-                                 'title="NWS Radar"></iframe>';
+      if (!pointResponse.ok) {
+        throw new Error('Failed to get NWS point data');
+      }
+      
+      const pointData = await pointResponse.json();
+      const forecastUrl = pointData.properties.forecast;
+      const forecastHourlyUrl = pointData.properties.forecastHourly;
+      const observationStations = pointData.properties.observationStations;
+      const radarStation = pointData.properties.radarStation;
+
+      const [forecastData, hourlyData, alertsData, currentData] = await Promise.all([
+        fetch(forecastUrl).then(r => r.json()),
+        fetch(forecastHourlyUrl).then(r => r.json()).catch(() => null),
+        fetch(`https://api.weather.gov/alerts/active?point=${latitude},${longitude}`).then(r => r.json()).catch(() => null),
+        this.getCurrentObservations(observationStations)
+      ]);
+
+      this._weatherData = {
+        current: currentData,
+        forecast: forecastData.properties.periods,
+        hourly: hourlyData ? hourlyData.properties.periods : [],
+        alerts: alertsData ? alertsData.features : [],
+        coordinates: { latitude, longitude },
+        radarStation: radarStation,
+        lastUpdated: new Date()
+      };
+
+      this.render();
+    } catch (error) {
+      console.error('Error fetching NWS weather data:', error);
+      this._weatherData = { 
+        error: error.message,
+        lastUpdated: new Date()
+      };
+      this.render();
+    }
+  }
+
+  async getCurrentObservations(observationStations) {
+    try {
+      const stationsResponse = await fetch(observationStations);
+      const stationsData = await stationsResponse.json();
+      
+      if (!stationsData.features || stationsData.features.length === 0) {
+        return null;
+      }
+      
+      const station = stationsData.features[0];
+      const obsResponse = await fetch(`${station.id}/observations/latest`);
+      
+      if (obsResponse.ok) {
+        const obsData = await obsResponse.json();
+        return obsData.properties;
+      }
+      return null;
+    } catch {
+      return null;
     }
   }
 
   render() {
     if (!this._hass) return;
 
+    let html = `<style>${this.getStyles()}</style>`;
+    
     if (!this._weatherData) {
-      this.shadowRoot.innerHTML = this.getLoadingHTML();
-      return;
+      html += `<ha-card><div class="loading">Loading NWS weather data...</div></ha-card>`;
+    } else if (this._weatherData.error) {
+      html += `<ha-card><div class="error">Error: ${this._weatherData.error}</div></ha-card>`;
+    } else {
+      html += '<ha-card>';
+      html += this.renderHeader();
+      if (this._config.show_alerts) html += this.renderAlerts();
+      html += this.renderCurrentWeather();
+      if (this._config.show_radar) html += this.renderRadarSection();
+      if (this._config.show_hourly) html += this.renderHourlyForecast();
+      if (this._config.show_forecast) html += this.renderExtendedForecast();
+      html += this.renderFooter();
+      html += '</ha-card>';
     }
 
-    if (this._weatherData.error) {
-      this.shadowRoot.innerHTML = this.getErrorHTML();
-      return;
-    }
-
-    this.shadowRoot.innerHTML = this.getMainHTML();
-    
-    // Set up radar controls if enabled
-    if (this._config.show_radar) {
-      this.setupRadarControls();
-    }
-  }
-
-  setupRadarControls() {
-    var self = this;
-    
-    // Set up refresh button
-    var refreshBtn = this.shadowRoot.querySelector('.radar-refresh-btn');
-    if (refreshBtn) {
-      refreshBtn.addEventListener('click', function() {
-        self.loadRadarFrames();
-      });
-    }
-
-    // Set up animation controls
-    var playBtn = this.shadowRoot.querySelector('.radar-play-btn');
-    if (playBtn) {
-      playBtn.addEventListener('click', function() {
-        self.toggleRadarAnimation();
-      });
-    }
-  }
-
-  toggleRadarAnimation() {
-    this._radarAnimating = !this._radarAnimating;
-    var playBtn = this.shadowRoot.querySelector('.radar-play-btn');
-    if (playBtn) {
-      playBtn.textContent = this._radarAnimating ? '⏸' : '▶';
-    }
-  }
-
-  getLoadingHTML() {
-    return '<style>' + this.getStyles() + '</style><ha-card><div class="loading">Loading NWS weather data...</div></ha-card>';
-  }
-
-  getErrorHTML() {
-    return '<style>' + this.getStyles() + '</style><ha-card><div class="error">Error: ' + this._weatherData.error + '</div></ha-card>';
-  }
-
-  getMainHTML() {
-    var html = '<style>' + this.getStyles() + '</style>';
-    html += '<ha-card>';
-    
-    html += this.renderHeader();
-    
-    if (this._config.show_alerts) {
-      html += this.renderAlerts();
-    }
-    
-    html += this.renderCurrentWeather();
-    
-    if (this._config.show_radar) {
-      html += this.renderRadarSection();
-    }
-    
-    if (this._config.show_hourly) {
-      html += this.renderHourlyForecast();
-    }
-    
-    if (this._config.show_forecast) {
-      html += this.renderExtendedForecast();
-    }
-    
-    html += this.renderFooter();
-    
-    html += '</ha-card>';
-    return html;
+    this.shadowRoot.innerHTML = html;
   }
 
   renderHeader() {
-    var lastUpdated = this._weatherData.lastUpdated ? this._weatherData.lastUpdated.toLocaleTimeString() : 'Unknown';
+    const lastUpdated = this._weatherData.lastUpdated ? 
+      this._weatherData.lastUpdated.toLocaleTimeString() : 'Unknown';
     
-    return '<div class="card-header">' +
-           '<div class="title">' + this._config.title + '</div>' +
-           '<div class="header-controls">' +
-           '<div class="last-updated">Updated: ' + lastUpdated + '</div>' +
-           '<button class="refresh-btn" onclick="this.getRootNode().host.fetchWeatherData()">↻</button>' +
-           '</div>' +
-           '</div>';
+    return `
+      <div class="card-header">
+        <div class="title">${this._config.title}</div>
+        <div class="header-controls">
+          <div class="last-updated">Updated: ${lastUpdated}</div>
+          <button class="refresh-btn" onclick="this.getRootNode().host.fetchWeatherData()">↻</button>
+        </div>
+      </div>`;
   }
 
   renderAlerts() {
@@ -322,22 +180,22 @@ class YetAnotherWeatherCard extends HTMLElement {
       return '';
     }
 
-    var html = '<div class="alerts-section">';
+    let html = '<div class="alerts-section">';
     
-    for (var i = 0; i < this._weatherData.alerts.length; i++) {
-      var alert = this._weatherData.alerts[i];
-      var props = alert.properties;
-      var severity = props.severity || 'Minor';
+    for (const alert of this._weatherData.alerts) {
+      const props = alert.properties;
+      const severity = props.severity || 'Minor';
       
-      html += '<div class="alert alert-' + severity.toLowerCase() + '">';
-      html += '<div class="alert-header">';
-      html += '<span class="alert-title">' + props.event + '</span>';
-      html += '<span class="alert-severity">' + severity + '</span>';
-      html += '</div>';
-      html += '<div class="alert-content">';
-      html += '<div class="alert-headline">' + props.headline + '</div>';
-      html += '</div>';
-      html += '</div>';
+      html += `
+        <div class="alert alert-${severity.toLowerCase()}">
+          <div class="alert-header">
+            <span class="alert-title">${props.event}</span>
+            <span class="alert-severity">${severity}</span>
+          </div>
+          <div class="alert-content">
+            <div class="alert-headline">${props.headline}</div>
+          </div>
+        </div>`;
     }
     
     html += '</div>';
@@ -345,119 +203,107 @@ class YetAnotherWeatherCard extends HTMLElement {
   }
 
   renderCurrentWeather() {
-    var current = this._weatherData.current;
-    var forecast = this._weatherData.forecast;
+    const current = this._weatherData.current;
+    const forecast = this._weatherData.forecast;
     
-    var temperature = 'N/A';
-    if (current && current.temperature && current.temperature.value) {
+    let temperature = 'N/A';
+    if (current?.temperature?.value) {
       temperature = Math.round(this.celsiusToFahrenheit(current.temperature.value));
-    } else if (forecast && forecast[0]) {
-      var match = forecast[0].temperature.toString().match(/\d+/);
+    } else if (forecast?.[0]) {
+      const match = forecast[0].temperature.toString().match(/\d+/);
       temperature = match ? match[0] : 'N/A';
     }
 
-    var condition = 'Unknown';
-    if (current && current.textDescription) {
+    let condition = 'Unknown';
+    if (current?.textDescription) {
       condition = current.textDescription;
-    } else if (forecast && forecast[0] && forecast[0].shortForecast) {
+    } else if (forecast?.[0]?.shortForecast) {
       condition = forecast[0].shortForecast;
     }
 
-    var html = '<div class="current-weather">';
-    html += '<div class="current-main">';
-    html += '<div class="temperature-section">';
-    html += '<div class="temperature">' + temperature + '°</div>';
-    html += '</div>';
-    html += '<div class="condition-info">';
-    html += '<div class="condition">' + condition + '</div>';
-    html += '</div>';
-    html += '</div>';
+    let html = `
+      <div class="current-weather">
+        <div class="current-main">
+          <div class="temperature-section">
+            <div class="temperature">${temperature}°</div>
+          </div>
+          <div class="condition-info">
+            <div class="condition">${condition}</div>
+          </div>
+        </div>
+        <div class="current-details">
+          <div class="details-grid">`;
 
-    html += '<div class="current-details">';
-    html += '<div class="details-grid">';
-    
-    if (current && current.relativeHumidity && current.relativeHumidity.value) {
-      html += '<div class="detail-item">';
-      html += '<span class="detail-label">Humidity</span>';
-      html += '<span class="detail-value">' + Math.round(current.relativeHumidity.value) + '%</span>';
-      html += '</div>';
+    if (current?.relativeHumidity?.value) {
+      html += `
+        <div class="detail-item">
+          <span class="detail-label">Humidity</span>
+          <span class="detail-value">${Math.round(current.relativeHumidity.value)}%</span>
+        </div>`;
     }
     
-    if (current && current.windSpeed && current.windSpeed.value) {
-      var windSpeed = Math.round(this.mpsToMph(current.windSpeed.value));
-      var windDir = current.windDirection ? current.windDirection.value : '';
-      html += '<div class="detail-item">';
-      html += '<span class="detail-label">Wind</span>';
-      html += '<span class="detail-value">' + windSpeed + ' mph ' + this.getWindDirection(windDir) + '</span>';
-      html += '</div>';
+    if (current?.windSpeed?.value) {
+      const windSpeed = Math.round(this.mpsToMph(current.windSpeed.value));
+      const windDir = current.windDirection ? this.getWindDirection(current.windDirection.value) : '';
+      html += `
+        <div class="detail-item">
+          <span class="detail-label">Wind</span>
+          <span class="detail-value">${windSpeed} mph ${windDir}</span>
+        </div>`;
     }
     
-    if (current && current.barometricPressure && current.barometricPressure.value) {
-      var pressure = Math.round(current.barometricPressure.value / 100);
-      html += '<div class="detail-item">';
-      html += '<span class="detail-label">Pressure</span>';
-      html += '<span class="detail-value">' + pressure + ' mb</span>';
-      html += '</div>';
+    if (current?.barometricPressure?.value) {
+      const pressure = Math.round(current.barometricPressure.value / 100);
+      html += `
+        <div class="detail-item">
+          <span class="detail-label">Pressure</span>
+          <span class="detail-value">${pressure} mb</span>
+        </div>`;
     }
     
-    if (current && current.visibility && current.visibility.value) {
-      var visibility = Math.round(current.visibility.value / 1609.34); // Convert meters to miles
-      html += '<div class="detail-item">';
-      html += '<span class="detail-label">Visibility</span>';
-      html += '<span class="detail-value">' + visibility + ' mi</span>';
-      html += '</div>';
+    if (current?.visibility?.value) {
+      const visibility = Math.round(current.visibility.value / 1609.34);
+      html += `
+        <div class="detail-item">
+          <span class="detail-label">Visibility</span>
+          <span class="detail-value">${visibility} mi</span>
+        </div>`;
     }
     
-    html += '</div>';
-    html += '</div>';
-    html += '</div>';
-    
+    html += '</div></div></div>';
     return html;
   }
 
   renderRadarSection() {
-    var station = this._weatherData.radarStation || 'N/A';
+    const station = this._weatherData.radarStation || 'N/A';
+    const lat = this._weatherData.coordinates.latitude;
+    const lon = this._weatherData.coordinates.longitude;
     
-    // We'll use three different approaches for radar data
-    var html = '<div class="radar-section">';
-    html += '<div class="section-header">Weather Radar</div>';
-    
-    // Approach 1: Embed NWS Radar page in iframe (most reliable)
-    html += '<div class="radar-option">';
-    html += '<div class="radar-option-header">NWS NEXRAD Radar - Station: ' + station + '</div>';
-    html += '<div class="radar-iframe-container" style="height: ' + this._config.radar_height + 'px;">';
-    html += '<div class="radar-loading">Loading radar...</div>';
-    html += '</div>';
-    html += '<div class="radar-controls">';
-    html += '<button class="radar-refresh-btn">↻ Refresh</button>';
-    html += '<a href="https://radar.weather.gov/station/' + station + '/standard" target="_blank" class="radar-link">Open Full Radar →</a>';
-    html += '</div>';
-    html += '</div>';
-    
-    // Approach 2: Alternative - Windy.com embed (very reliable, different data source)
-    var lat = this._weatherData.coordinates.latitude;
-    var lon = this._weatherData.coordinates.longitude;
-    html += '<div class="radar-option">';
-    html += '<div class="radar-option-header">Alternative: Windy.com Radar</div>';
-    html += '<iframe width="100%" height="' + Math.round(this._config.radar_height * 0.8) + '" ';
-    html += 'src="https://embed.windy.com/embed2.html?lat=' + lat + '&lon=' + lon + '&detailLat=' + lat + '&detailLon=' + lon + '&width=650&height=' + Math.round(this._config.radar_height * 0.8) + '&zoom=8&level=surface&overlay=radar&product=radar&menu=&message=&marker=&calendar=now&pressure=&type=map&location=coordinates&detail=&metricWind=mph&metricTemp=%C2%B0F&radarRange=-1" ';
-    html += 'frameborder="0"></iframe>';
-    html += '</div>';
-    
-    // Approach 3: Links to various radar sources
-    html += '<div class="radar-links">';
-    html += '<div class="radar-links-header">Additional Radar Sources:</div>';
-    html += '<div class="radar-links-grid">';
-    html += '<a href="https://radar.weather.gov/station/' + station + '" target="_blank">NWS Enhanced</a>';
-    html += '<a href="https://www.wunderground.com/radar/us/' + station + '" target="_blank">Weather Underground</a>';
-    html += '<a href="https://weather.com/weather/radar/interactive/l/' + lat + ',' + lon + '" target="_blank">Weather.com</a>';
-    html += '<a href="https://www.accuweather.com/en/us/weather-radar?lat=' + lat + '&lon=' + lon + '" target="_blank">AccuWeather</a>';
-    html += '</div>';
-    html += '</div>';
-    
-    html += '</div>';
-    
-    return html;
+    return `
+      <div class="radar-section">
+        <div class="section-header">Weather Radar</div>
+        
+        <div class="radar-option">
+          <div class="radar-option-header">Windy.com Interactive Radar</div>
+          <iframe 
+            width="100%" 
+            height="${this._config.radar_height}" 
+            src="https://embed.windy.com/embed2.html?lat=${lat}&lon=${lon}&detailLat=${lat}&detailLon=${lon}&width=650&height=${this._config.radar_height}&zoom=8&level=surface&overlay=radar&product=radar&menu=&message=&marker=&calendar=now&pressure=&type=map&location=coordinates&detail=&metricWind=mph&metricTemp=%C2%B0F&radarRange=-1" 
+            frameborder="0"
+            style="border-radius: 8px;">
+          </iframe>
+        </div>
+        
+        <div class="radar-links">
+          <div class="radar-links-header">Additional Radar Sources (Station: ${station}):</div>
+          <div class="radar-links-grid">
+            <a href="https://radar.weather.gov/station/${station}" target="_blank">NWS Radar</a>
+            <a href="https://www.wunderground.com/radar/us/${station}" target="_blank">Weather Underground</a>
+            <a href="https://weather.com/weather/radar/interactive/l/${lat},${lon}" target="_blank">Weather.com</a>
+            <a href="https://www.accuweather.com/en/us/weather-radar?lat=${lat}&lon=${lon}" target="_blank">AccuWeather</a>
+          </div>
+        </div>
+      </div>`;
   }
 
   renderHourlyForecast() {
@@ -465,30 +311,32 @@ class YetAnotherWeatherCard extends HTMLElement {
       return '';
     }
 
-    var html = '<div class="hourly-section">';
-    html += '<div class="section-header">Hourly Forecast</div>';
-    html += '<div class="hourly-scroll">';
+    let html = `
+      <div class="hourly-section">
+        <div class="section-header">Hourly Forecast</div>
+        <div class="hourly-scroll">`;
     
-    var hourlyData = this._weatherData.hourly.slice(0, 12);
-    for (var i = 0; i < hourlyData.length; i++) {
-      var hour = hourlyData[i];
-      var time = new Date(hour.startTime);
-      var timeStr = time.toLocaleTimeString([], { hour: 'numeric' });
+    const hourlyData = this._weatherData.hourly.slice(0, 12);
+    for (const hour of hourlyData) {
+      const time = new Date(hour.startTime);
+      const timeStr = time.toLocaleTimeString([], { hour: 'numeric' });
+      const icon = this.getWeatherIcon(hour.shortForecast);
       
-      html += '<div class="hourly-item">';
-      html += '<div class="hour-time">' + timeStr + '</div>';
-      html += '<div class="hour-icon">' + this.getWeatherIcon(hour.shortForecast) + '</div>';
-      html += '<div class="hour-temp">' + hour.temperature + '°</div>';
-      if (hour.probabilityOfPrecipitation && hour.probabilityOfPrecipitation.value) {
-        html += '<div class="hour-precip">' + hour.probabilityOfPrecipitation.value + '%</div>';
+      html += `
+        <div class="hourly-item">
+          <div class="hour-time">${timeStr}</div>
+          <div class="hour-icon">${icon}</div>
+          <div class="hour-temp">${hour.temperature}°</div>`;
+      
+      if (hour.probabilityOfPrecipitation?.value) {
+        html += `<div class="hour-precip">${hour.probabilityOfPrecipitation.value}%</div>`;
       }
-      html += '<div class="hour-condition">' + this.truncateText(hour.shortForecast, 15) + '</div>';
-      html += '</div>';
+      
+      html += `<div class="hour-condition">${this.truncateText(hour.shortForecast, 15)}</div>
+        </div>`;
     }
     
-    html += '</div>';
-    html += '</div>';
-    
+    html += '</div></div>';
     return html;
   }
 
@@ -497,60 +345,60 @@ class YetAnotherWeatherCard extends HTMLElement {
       return '';
     }
 
-    var html = '<div class="forecast-section">';
-    html += '<div class="section-header">' + this._config.forecast_days + '-Day Forecast</div>';
+    let html = `
+      <div class="forecast-section">
+        <div class="section-header">${this._config.forecast_days}-Day Forecast</div>`;
     
-    var maxPeriods = Math.min(this._config.forecast_days * 2, this._weatherData.forecast.length);
-    for (var i = 0; i < maxPeriods; i++) {
-      var period = this._weatherData.forecast[i];
+    const maxPeriods = Math.min(this._config.forecast_days * 2, this._weatherData.forecast.length);
+    for (let i = 0; i < maxPeriods; i++) {
+      const period = this._weatherData.forecast[i];
+      const icon = this.getWeatherIcon(period.shortForecast);
       
-      html += '<div class="forecast-item">';
-      html += '<div class="forecast-name">' + period.name + '</div>';
-      html += '<div class="forecast-icon">' + this.getWeatherIcon(period.shortForecast) + '</div>';
-      html += '<div class="forecast-temp">' + period.temperature + '°' + period.temperatureUnit + '</div>';
-      html += '<div class="forecast-desc">' + period.shortForecast + '</div>';
-      html += '</div>';
+      html += `
+        <div class="forecast-item">
+          <div class="forecast-name">${period.name}</div>
+          <div class="forecast-icon">${icon}</div>
+          <div class="forecast-temp">${period.temperature}°${period.temperatureUnit}</div>
+          <div class="forecast-desc">${period.shortForecast}</div>
+        </div>`;
     }
     
     html += '</div>';
-    
     return html;
   }
 
   renderFooter() {
-    var html = '<div class="card-footer">';
-    html += '<div class="data-source">Data from National Weather Service</div>';
-    if (this._config.show_branding) {
-      html += '<div class="branding">YAWC v2.3.0</div>';
-    }
-    html += '</div>';
-    
-    return html;
+    return `
+      <div class="card-footer">
+        <div class="data-source">Data from National Weather Service</div>
+        ${this._config.show_branding ? '<div class="branding">YAWC v2.3.0</div>' : ''}
+      </div>`;
   }
 
   getWeatherIcon(condition) {
     if (!condition) return '🌡️';
     
-    var lowerCondition = condition.toLowerCase();
+    const lower = condition.toLowerCase();
     
-    if (lowerCondition.includes('sunny') || lowerCondition.includes('clear')) return '☀️';
-    if (lowerCondition.includes('partly cloudy') || lowerCondition.includes('partly sunny')) return '⛅';
-    if (lowerCondition.includes('cloudy') || lowerCondition.includes('overcast')) return '☁️';
-    if (lowerCondition.includes('rain') || lowerCondition.includes('shower')) return '🌧️';
-    if (lowerCondition.includes('thunderstorm') || lowerCondition.includes('thunder')) return '⛈️';
-    if (lowerCondition.includes('snow')) return '❄️';
-    if (lowerCondition.includes('fog') || lowerCondition.includes('mist')) return '🌫️';
-    if (lowerCondition.includes('wind')) return '💨';
-    if (lowerCondition.includes('hot')) return '🌡️';
-    if (lowerCondition.includes('cold')) return '🥶';
+    if (lower.includes('sunny') || lower.includes('clear')) return '☀️';
+    if (lower.includes('partly cloudy') || lower.includes('partly sunny')) return '⛅';
+    if (lower.includes('cloudy') || lower.includes('overcast')) return '☁️';
+    if (lower.includes('rain') || lower.includes('shower')) return '🌧️';
+    if (lower.includes('thunderstorm') || lower.includes('thunder')) return '⛈️';
+    if (lower.includes('snow')) return '❄️';
+    if (lower.includes('fog') || lower.includes('mist')) return '🌫️';
+    if (lower.includes('wind')) return '💨';
+    if (lower.includes('hot')) return '🌡️';
+    if (lower.includes('cold')) return '🥶';
     
     return '🌡️';
   }
 
   getWindDirection(degrees) {
     if (!degrees && degrees !== 0) return '';
-    var directions = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
-    var index = Math.round(degrees / 22.5) % 16;
+    const directions = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 
+                       'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+    const index = Math.round(degrees / 22.5) % 16;
     return directions[index];
   }
 
@@ -759,60 +607,6 @@ class YetAnotherWeatherCard extends HTMLElement {
         font-weight: 500;
       }
       
-      .radar-iframe-container {
-        position: relative;
-        background: #000;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      }
-      
-      .radar-iframe-container iframe {
-        width: 100%;
-        height: 100%;
-        border: 0;
-      }
-      
-      .radar-loading {
-        color: #fff;
-        font-size: 14px;
-      }
-      
-      .radar-controls {
-        display: flex;
-        gap: 12px;
-        padding: 8px 12px;
-        background: var(--secondary-background-color);
-      }
-      
-      .radar-refresh-btn, .radar-play-btn {
-        padding: 6px 12px;
-        background: var(--primary-color);
-        color: white;
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
-        font-size: 14px;
-      }
-      
-      .radar-refresh-btn:hover, .radar-play-btn:hover {
-        opacity: 0.9;
-      }
-      
-      .radar-link {
-        margin-left: auto;
-        padding: 6px 12px;
-        color: var(--primary-color);
-        text-decoration: none;
-        font-size: 14px;
-        display: flex;
-        align-items: center;
-      }
-      
-      .radar-link:hover {
-        text-decoration: underline;
-      }
-      
       .radar-links {
         margin-top: 16px;
         padding: 12px;
@@ -970,3 +764,42 @@ class YetAnotherWeatherCard extends HTMLElement {
         }
       }
     `;
+  }
+
+  getCardSize() {
+    let size = 4;
+    if (this._config.show_hourly) size += 1;
+    if (this._config.show_radar) size += 3;
+    if (this._config.show_forecast) size += 1;
+    return size;
+  }
+
+  static getConfigElement() {
+    return document.createElement('yawc-card-editor');
+  }
+
+  static getStubConfig() {
+    return {
+      title: 'YAWC Weather',
+      show_radar: true,
+      radar_height: 400,
+      show_forecast: true,
+      forecast_days: 5
+    };
+  }
+}
+
+// Register the card
+customElements.define('yawc-card', YetAnotherWeatherCard);
+
+// Register with HACS
+window.customCards = window.customCards || [];
+window.customCards.push({
+  type: 'yawc-card',
+  name: 'YAWC - Yet Another Weather Card',
+  description: 'NWS weather card with working radar, alerts, and forecasts',
+  preview: false,
+  documentationURL: 'https://github.com/cnewman402/yawc'
+});
+
+console.log('YAWC v2.3.0 - Card registered successfully!');
