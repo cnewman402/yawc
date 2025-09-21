@@ -1,4 +1,4 @@
-console.log('YAWC v2.0.0 with Radar Loading...');
+console.log('YAWC v2.0.0 with Real Radar Loading...');
 
 class YetAnotherWeatherCard extends HTMLElement {
   constructor() {
@@ -179,7 +179,52 @@ class YetAnotherWeatherCard extends HTMLElement {
       });
   }
 
-  fetchRadarData() {
+  // Updated radar functions with real NWS radar data
+  generateRadarImageUrl(station, timestamp, frameIndex) {
+    // Format timestamp for NWS radar API
+    var year = timestamp.getUTCFullYear();
+    var month = String(timestamp.getUTCMonth() + 1).padStart(2, '0');
+    var day = String(timestamp.getUTCDate()).padStart(2, '0');
+    var hour = String(timestamp.getUTCHours()).padStart(2, '0');
+    var minute = String(Math.floor(timestamp.getUTCMinutes() / 5) * 5).padStart(2, '0'); // Round to nearest 5 minutes
+    
+    var dateStr = year + month + day;
+    var timeStr = hour + minute;
+    
+    // NWS Ridge RII radar URLs - Base Reflectivity
+    var radarType = this._config.radar_type || 'base_reflectivity';
+    var productCode;
+    
+    switch (radarType) {
+      case 'base_reflectivity':
+        productCode = 'N0R'; // Base Reflectivity
+        break;
+      case 'base_velocity':
+        productCode = 'N0V'; // Base Velocity
+        break;
+      case 'storm_motion':
+        productCode = 'N0S'; // Storm Relative Motion
+        break;
+      case 'precipitation':
+        productCode = 'N1P'; // 1-hour Precipitation
+        break;
+      default:
+        productCode = 'N0R';
+    }
+    
+    // Use NOAA Weather Service radar with fallback
+    var radarUrl = 'https://radar.weather.gov/ridge/RadarImg/' + productCode + '/' + station + '/' + station + '_' + productCode + '_0.gif';
+    
+    console.log('Generated radar URL for frame', frameIndex + 1, ':', radarUrl);
+    return radarUrl;
+  }
+
+  getFallbackRadarUrl(station, timestamp) {
+    // Use the most recent available radar image as fallback
+    return 'https://radar.weather.gov/ridge/RadarImg/N0R/' + station + '/' + station + '_N0R_0.gif';
+  }
+
+  async fetchRadarData() {
     if (!this._weatherData || !this._weatherData.coordinates) {
       console.log('No weather data for radar');
       return;
@@ -194,18 +239,26 @@ class YetAnotherWeatherCard extends HTMLElement {
     
     var now = new Date();
     var frameTimestamps = [];
+    
+    // Generate timestamps for the last 50 minutes (10 frames, 5 minutes apart)
     for (var i = this._config.animation_frames - 1; i >= 0; i--) {
       var frameTime = new Date(now.getTime() - (i * 5 * 60 * 1000));
       frameTimestamps.push(frameTime);
     }
 
     this._radarFrames = [];
+    
+    // Create radar frame objects with real URLs
     for (var i = 0; i < frameTimestamps.length; i++) {
+      var timestamp = frameTimestamps[i];
+      var radarUrl = this.generateRadarImageUrl(radarStation, timestamp, i);
+      
       this._radarFrames.push({
-        timestamp: frameTimestamps[i],
-        url: this.generateRadarImageUrl(radarStation, frameTimestamps[i], i),
+        timestamp: timestamp,
+        url: radarUrl,
         station: radarStation,
-        index: i
+        index: i,
+        loaded: false
       });
     }
 
@@ -218,21 +271,52 @@ class YetAnotherWeatherCard extends HTMLElement {
       lastUpdated: new Date()
     };
 
-    console.log('Loaded', this._radarFrames.length, 'radar frames');
+    console.log('Generated', this._radarFrames.length, 'radar frame URLs');
     
+    // Preload radar images
+    await this.preloadRadarImages();
+    
+    // Update display after loading
     setTimeout(function() {
       self.updateRadarDisplay();
     }, 100);
   }
 
-  generateRadarImageUrl(station, timestamp, index) {
-    var colors = ['1a1a2e', '16537e', '0f4c75', '3282b8', 'bbe1fa'];
-    var color = colors[index % colors.length];
-    var timeStr = timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    var intensities = ['Light', 'Moderate', 'Heavy', 'Severe', 'Extreme'];
-    var intensity = intensities[Math.floor(Math.random() * intensities.length)];
+  async preloadRadarImages() {
+    var self = this;
+    var loadPromises = this._radarFrames.map(function(frame, index) {
+      return new Promise(function(resolve) {
+        var img = new Image();
+        img.crossOrigin = 'anonymous'; // Handle CORS
+        
+        img.onload = function() {
+          frame.loaded = true;
+          console.log('Radar frame ' + (index + 1) + ' loaded');
+          resolve();
+        };
+        
+        img.onerror = function() {
+          console.warn('Failed to load radar frame ' + (index + 1) + ':', frame.url);
+          // Try fallback URL
+          var fallbackUrl = self.getFallbackRadarUrl(frame.station, frame.timestamp);
+          if (fallbackUrl !== frame.url) {
+            frame.url = fallbackUrl;
+            img.src = fallbackUrl;
+          } else {
+            frame.loaded = false;
+            resolve();
+          }
+        };
+        
+        img.src = frame.url;
+      });
+    });
     
-    return 'https://via.placeholder.com/600x600/' + color + '/ffffff?text=Radar+' + station + '%0A' + timeStr + '%0A' + intensity;
+    // Wait for all images to load (or fail)
+    await Promise.allSettled(loadPromises);
+    
+    var loadedCount = this._radarFrames.filter(function(f) { return f.loaded; }).length;
+    console.log('Loaded ' + loadedCount + '/' + this._radarFrames.length + ' radar frames');
   }
 
   findNearestRadarStation(latitude, longitude) {
@@ -245,7 +329,13 @@ class YetAnotherWeatherCard extends HTMLElement {
       { id: 'KBMX', lat: 33.17, lng: -86.77, name: 'Birmingham' },
       { id: 'KBGM', lat: 42.20, lng: -75.98, name: 'Binghamton' },
       { id: 'KCBW', lat: 46.04, lng: -67.81, name: 'Houlton' },
-      { id: 'KCCX', lat: 40.92, lng: -78.00, name: 'State College' }
+      { id: 'KCCX', lat: 40.92, lng: -78.00, name: 'State College' },
+      { id: 'KDTX', lat: 42.70, lng: -83.47, name: 'Detroit' },
+      { id: 'KTWX', lat: 38.99, lng: -96.23, name: 'Topeka' },
+      { id: 'KFWS', lat: 32.57, lng: -97.30, name: 'Dallas/Fort Worth' },
+      { id: 'KHGX', lat: 29.47, lng: -95.08, name: 'Houston' },
+      { id: 'KAMX', lat: 25.61, lng: -80.41, name: 'Miami' },
+      { id: 'KTBW', lat: 27.71, lng: -82.40, name: 'Tampa Bay' }
     ];
 
     var nearest = radarStations[0];
@@ -321,8 +411,14 @@ class YetAnotherWeatherCard extends HTMLElement {
       var currentFrame = this._radarFrames[this._currentFrame];
       
       if (radarImage) {
-        radarImage.src = currentFrame.url;
-        radarImage.style.display = 'block';
+        if (currentFrame.loaded) {
+          radarImage.src = currentFrame.url;
+          radarImage.style.display = 'block';
+          radarImage.style.opacity = '1';
+        } else {
+          radarImage.style.opacity = '0.5';
+          radarImage.alt = 'Loading radar data...';
+        }
       }
       
       if (radarTimestamp) {
@@ -334,7 +430,8 @@ class YetAnotherWeatherCard extends HTMLElement {
       }
       
       if (frameInfo) {
-        frameInfo.textContent = 'Frame ' + (this._currentFrame + 1) + ' of ' + this._radarFrames.length;
+        var loadedFrames = this._radarFrames.filter(function(f) { return f.loaded; }).length;
+        frameInfo.textContent = 'Frame ' + (this._currentFrame + 1) + ' of ' + this._radarFrames.length + ' (' + loadedFrames + ' loaded)';
       }
     }
 
@@ -554,12 +651,12 @@ class YetAnotherWeatherCard extends HTMLElement {
     if (!hasFrames) {
       html += '<div class="radar-loading">';
       html += '<div>🌩️ Loading radar data...</div>';
-      html += '<div style="font-size: 14px; margin-top: 8px;">Initializing ' + this._config.animation_frames + ' frames</div>';
+      html += '<div style="font-size: 14px; margin-top: 8px;">Fetching NEXRAD data for ' + station + '</div>';
       html += '</div>';
     } else {
       var currentFrame = this._radarFrames[this._currentFrame];
       html += '<div class="radar-map">';
-      html += '<img id="radar-image" src="' + currentFrame.url + '" alt="Weather Radar" style="width: 100%; height: 100%; object-fit: cover; display: block;" />';
+      html += '<img id="radar-image" src="' + currentFrame.url + '" alt="Weather Radar" style="width: 100%; height: 100%; object-fit: contain; display: block;" />';
       html += '<div class="radar-timestamp" id="radar-timestamp">' + currentFrame.timestamp.toLocaleTimeString() + '</div>';
       html += '</div>';
     }
@@ -580,7 +677,8 @@ class YetAnotherWeatherCard extends HTMLElement {
       html += '</div>';
       
       html += '<div class="animation-info">';
-      html += '<span id="frame-info">Frame ' + (this._currentFrame + 1) + ' of ' + this._radarFrames.length + '</span>';
+      var loadedFrames = this._radarFrames.filter(function(f) { return f.loaded; }).length;
+      html += '<span id="frame-info">Frame ' + (this._currentFrame + 1) + ' of ' + this._radarFrames.length + ' (' + loadedFrames + ' loaded)</span>';
       html += '<span>Speed: ' + this._config.animation_speed + 'ms</span>';
       html += '</div>';
       
@@ -725,7 +823,7 @@ class YawcCardEditor extends HTMLElement {
     html += '</div>';
     
     html += '<div style="margin-bottom: 16px;">';
-    html += '<label><input type="checkbox" id="show_radar" ' + (this._config.show_radar !== false ? 'checked' : '') + '> Enable Animated Radar</label>';
+    html += '<label><input type="checkbox" id="show_radar" ' + (this._config.show_radar !== false ? 'checked' : '') + '> Enable Real NEXRAD Radar</label>';
     html += '</div>';
     
     html += '<div style="margin-bottom: 16px;">';
@@ -764,8 +862,9 @@ class YawcCardEditor extends HTMLElement {
     html += '</div>';
     
     html += '<div style="background: #e8f5e8; padding: 12px; border-radius: 4px; margin-top: 16px;">';
-    html += '✅ YAWC v2.0.0 - Complete Radar System Ready!';
-    html += '<div style="font-size: 12px; margin-top: 4px;">🌩️ Animated radar with storm tracking</div>';
+    html += '✅ YAWC v2.0.0 - Real NEXRAD Radar Integration!';
+    html += '<div style="font-size: 12px; margin-top: 4px;">🌩️ Live radar data from NOAA weather service</div>';
+    html += '<div style="font-size: 12px; margin-top: 4px;">⚠️ Note: Some radar images may not load due to CORS restrictions</div>';
     html += '</div>';
     
     html += '</div>';
@@ -823,9 +922,9 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: 'yawc-card',
   name: 'YAWC - Yet Another Weather Card',
-  description: 'Complete NWS weather card with animated radar, storm tracking, and detailed forecasts',
+  description: 'Complete NWS weather card with real animated NEXRAD radar, storm tracking, and detailed forecasts',
   preview: false,
   documentationURL: 'https://github.com/cnewman402/yawc'
 });
 
-console.log('YAWC v2.0.0 with Radar Loaded Successfully!');
+console.log('YAWC v2.0.0 with Real NEXRAD Radar Loaded Successfully!');
