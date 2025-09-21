@@ -1,138 +1,205 @@
-// Ultra simple test - if this doesn't work, something is very wrong
-console.log('YAWC: Ultra simple test starting');
+console.log('YAWC: Method fix approach loading...');
 
-// Create constructor function (old school way)
-function YawcCard() {
-  const element = document.createElement('div');
-  element.style.cssText = 'padding:20px;background:#f0f0f0;border:1px solid #ccc;border-radius:8px;';
-  element.innerHTML = '<h3>YAWC Test Card</h3><p>If you see this, the element is working!</p>';
-  return element;
-}
-
-// Create proper HTMLElement class
-class YawcCard2 extends HTMLElement {
-  connectedCallback() {
-    console.log('YAWC: connectedCallback called');
-    this.innerHTML = '<div style="padding:20px;background:lightblue;border-radius:8px;"><h3>YAWC Connected!</h3></div>';
-  }
-}
-
-// Register the element
-customElements.define('yawc-test', YawcCard2);
-console.log('YAWC: yawc-test registered');
-
-// Now create the real card
 class YawcWeatherCard extends HTMLElement {
   constructor() {
     super();
-    console.log('YAWC: Real constructor');
-    this.attachShadow({mode: 'open'});
-    this.shadowRoot.innerHTML = '<div>Constructor called</div>';
-  }
-  
-  connectedCallback() {
-    console.log('YAWC: Real connectedCallback');
-    this.shadowRoot.innerHTML = `
-      <style>
-        :host { display: block; }
-        .card { padding: 20px; background: linear-gradient(45deg, #667eea, #764ba2); color: white; border-radius: 12px; }
-      </style>
-      <div class="card">
-        <h2>YAWC Weather Card</h2>
-        <p>This card is working but needs configuration...</p>
+    console.log('YAWC: Constructor start');
+    
+    // Define setConfig in multiple ways to ensure it exists
+    this.setConfig = this.setConfig.bind(this);
+    
+    // Also define it directly on the instance
+    const self = this;
+    this.setConfig = function(config) {
+      console.log('YAWC: Instance setConfig called with:', config);
+      return self._setConfigImpl(config);
+    };
+    
+    this.config = null;
+    this._hass = null;
+    
+    // Create initial content
+    this.innerHTML = `
+      <div style="
+        padding: 20px;
+        background: #e3f2fd;
+        border: 2px solid #2196f3;
+        border-radius: 12px;
+        text-align: center;
+        font-family: system-ui;
+      ">
+        <h3 style="color: #1976d2; margin: 0 0 10px 0;">🌦️ YAWC Loading</h3>
+        <p style="margin: 0; color: #666;">Waiting for configuration...</p>
       </div>
     `;
+    
+    console.log('YAWC: Constructor end, setConfig type:', typeof this.setConfig);
   }
   
-  setConfig(config) {
-    console.log('YAWC: setConfig called with:', config);
+  // Main implementation
+  _setConfigImpl(config) {
+    console.log('YAWC: _setConfigImpl called');
+    
+    if (!config) {
+      throw new Error('Configuration is required');
+    }
+    
+    if (!config.latitude || !config.longitude) {
+      throw new Error('Latitude and longitude are required');
+    }
+    
     this.config = config;
-    this.updateCard();
+    this._render();
+    console.log('YAWC: Configuration completed');
   }
   
-  updateCard() {
-    if (!this.config) return;
-    this.shadowRoot.innerHTML = `
-      <style>
-        :host { display: block; }
-        .card { 
-          padding: 20px; 
-          background: linear-gradient(45deg, #667eea, #764ba2); 
-          color: white; 
-          border-radius: 12px; 
-          text-align: center;
-          font-family: system-ui;
-        }
-        .temp { font-size: 3em; margin: 20px 0; }
-        .details { display: flex; justify-content: space-around; margin-top: 20px; }
-        .detail { background: rgba(255,255,255,0.2); padding: 10px; border-radius: 8px; }
-      </style>
-      <div class="card">
-        <h2>${this.config.title || 'YAWC Weather'}</h2>
-        <p>📍 ${this.config.latitude}, ${this.config.longitude}</p>
-        <div style="font-size: 3em;">⛅</div>
-        <div class="temp">72°F</div>
-        <div>Partly Cloudy</div>
-        <div class="details">
-          <div class="detail">
-            <div>Humidity</div>
-            <div>65%</div>
+  // Also define as class method
+  setConfig(config) {
+    console.log('YAWC: Class setConfig called');
+    return this._setConfigImpl(config);
+  }
+  
+  _render() {
+    console.log('YAWC: Rendering card');
+    
+    const title = this.config.title || 'YAWC Weather';
+    const lat = this.config.latitude;
+    const lon = this.config.longitude;
+    
+    this.innerHTML = `
+      <div style="
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 16px;
+        padding: 24px;
+        color: white;
+        font-family: system-ui, -apple-system, sans-serif;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+        text-align: center;
+      ">
+        <h2 style="margin: 0 0 8px 0; font-size: 1.5em;">${title}</h2>
+        <p style="margin: 0 0 20px 0; opacity: 0.9;">📍 ${lat.toFixed(4)}, ${lon.toFixed(4)}</p>
+        
+        <div style="margin: 30px 0;">
+          <div style="font-size: 4em; margin-bottom: 10px;">⛅</div>
+          <div style="font-size: 3em; font-weight: bold; margin-bottom: 8px;">72°F</div>
+          <div style="font-size: 1.2em; opacity: 0.9;">Partly Cloudy</div>
+        </div>
+        
+        <div style="
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+          gap: 12px;
+          margin-top: 24px;
+        ">
+          <div style="background: rgba(255,255,255,0.2); padding: 12px; border-radius: 8px;">
+            <div style="font-size: 0.9em; opacity: 0.8;">Humidity</div>
+            <div style="font-size: 1.3em; font-weight: bold;">65%</div>
           </div>
-          <div class="detail">
-            <div>Wind</div>
-            <div>12 mph</div>
+          <div style="background: rgba(255,255,255,0.2); padding: 12px; border-radius: 8px;">
+            <div style="font-size: 0.9em; opacity: 0.8;">Wind</div>
+            <div style="font-size: 1.3em; font-weight: bold;">12 mph</div>
           </div>
-          <div class="detail">
-            <div>Pressure</div>
-            <div>30.15"</div>
+          <div style="background: rgba(255,255,255,0.2); padding: 12px; border-radius: 8px;">
+            <div style="font-size: 0.9em; opacity: 0.8;">Pressure</div>
+            <div style="font-size: 1.3em; font-weight: bold;">30.15"</div>
           </div>
+        </div>
+        
+        <div style="
+          margin-top: 20px;
+          padding-top: 16px;
+          border-top: 1px solid rgba(255,255,255,0.2);
+          font-size: 0.8em;
+          opacity: 0.7;
+        ">
+          YAWC v1.0.0 • Sample Data • ${new Date().toLocaleTimeString()}
         </div>
       </div>
     `;
   }
   
   set hass(hass) {
+    console.log('YAWC: hass setter');
     this._hass = hass;
   }
   
-  getCardSize() { return 4; }
+  get hass() {
+    return this._hass;
+  }
+  
+  getCardSize() {
+    return 5;
+  }
   
   static getStubConfig() {
-    return { latitude: 40.8136, longitude: -96.7026, title: 'Test Weather' };
+    return {
+      title: 'YAWC Weather',
+      latitude: 40.8136,
+      longitude: -96.7026
+    };
   }
 }
 
-// Register the main card
+// Also define setConfig on the prototype as backup
+YawcWeatherCard.prototype.setConfig = function(config) {
+  console.log('YAWC: Prototype setConfig called');
+  return this._setConfigImpl(config);
+};
+
+console.log('YAWC: Class defined, registering...');
+
+// Register element
 customElements.define('yawc', YawcWeatherCard);
-console.log('YAWC: Main card registered');
+console.log('YAWC: Element registered');
 
-// Test both elements
+// Comprehensive testing
 setTimeout(() => {
-  console.log('YAWC: Testing elements...');
+  console.log('YAWC: Starting comprehensive test...');
   
-  // Test 1
-  const test1 = document.createElement('yawc-test');
-  console.log('YAWC: Test1 created:', test1);
+  const element = document.createElement('yawc');
+  console.log('YAWC: Element created:', element.constructor.name);
+  console.log('YAWC: setConfig on instance:', typeof element.setConfig);
+  console.log('YAWC: setConfig on prototype:', typeof YawcWeatherCard.prototype.setConfig);
+  console.log('YAWC: _setConfigImpl on instance:', typeof element._setConfigImpl);
   
-  // Test 2
-  const test2 = document.createElement('yawc');
-  console.log('YAWC: Test2 created:', test2);
-  console.log('YAWC: setConfig exists:', typeof test2.setConfig);
-  
-  if (test2.setConfig) {
-    test2.setConfig({title: 'Test', latitude: 40, longitude: -96});
-    console.log('YAWC: ✅ setConfig worked!');
+  // Try to call setConfig
+  if (element.setConfig) {
+    try {
+      element.setConfig({
+        title: 'Test Weather',
+        latitude: 40.8136,
+        longitude: -96.7026
+      });
+      console.log('YAWC: ✅ setConfig test successful');
+    } catch (error) {
+      console.error('YAWC: ❌ setConfig test failed:', error);
+    }
   } else {
-    console.error('YAWC: ❌ setConfig missing');
+    console.error('YAWC: ❌ setConfig not found on element');
+    
+    // Try alternative approaches
+    console.log('YAWC: Trying _setConfigImpl directly...');
+    if (element._setConfigImpl) {
+      try {
+        element._setConfigImpl({
+          title: 'Test Weather',
+          latitude: 40.8136,
+          longitude: -96.7026
+        });
+        console.log('YAWC: ✅ _setConfigImpl works');
+      } catch (error) {
+        console.error('YAWC: ❌ _setConfigImpl failed:', error);
+      }
+    }
   }
-}, 500);
+}, 200);
 
-// Register with HA
+// Register with Home Assistant
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: 'yawc',
   name: 'YAWC Weather Card',
-  description: 'Simple weather card test'
+  description: 'Enhanced weather card with multiple method definitions'
 });
 
-console.log('YAWC: All done!');
+console.log('YAWC: Registration complete - ready to test!');
