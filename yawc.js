@@ -1156,7 +1156,7 @@ class YetAnotherWeatherCard extends HTMLElement {
   }
 }
 
-// Enhanced Configuration Editor
+// Working Configuration Editor
 class YawcCardEditor extends HTMLElement {
   constructor() {
     super();
@@ -1164,8 +1164,12 @@ class YawcCardEditor extends HTMLElement {
   }
 
   setConfig(config) {
-    this._config = config;
-    this.render();
+    this._config = { ...config };
+    if (this.shadowRoot.innerHTML) {
+      this.updateValues();
+    } else {
+      this.render();
+    }
   }
 
   configChanged(newConfig) {
@@ -1180,236 +1184,373 @@ class YawcCardEditor extends HTMLElement {
   render() {
     this.shadowRoot.innerHTML = `
       <style>
-        .form {
+        :host {
+          display: block;
+        }
+        .card-config {
           display: flex;
           flex-direction: column;
           gap: 16px;
-          padding: 16px;
+          padding: 20px;
+          background: var(--card-background-color);
+          border-radius: 8px;
+          box-shadow: var(--ha-card-box-shadow);
         }
         
-        .form-section {
+        .config-section {
           border: 1px solid var(--divider-color);
           border-radius: 8px;
           padding: 16px;
+          background: var(--secondary-background-color);
         }
         
         .section-title {
-          font-size: 16px;
+          font-size: 18px;
           font-weight: 500;
-          margin-bottom: 12px;
+          margin-bottom: 16px;
           color: var(--primary-text-color);
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+        
+        .form-group {
+          margin-bottom: 16px;
         }
         
         .form-row {
           display: grid;
           grid-template-columns: 1fr 1fr;
-          gap: 12px;
-          margin-bottom: 12px;
+          gap: 16px;
+          margin-bottom: 16px;
         }
         
         .form-row.full-width {
           grid-template-columns: 1fr;
         }
         
-        paper-input {
-          width: 100%;
-        }
-        
-        ha-switch {
-          margin-top: 8px;
-        }
-        
-        .switch-row {
+        .input-group {
           display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin: 8px 0;
+          flex-direction: column;
         }
         
-        .info {
+        .label {
           font-size: 14px;
+          font-weight: 500;
+          margin-bottom: 4px;
+          color: var(--primary-text-color);
+        }
+        
+        .input {
+          padding: 8px 12px;
+          border: 2px solid var(--divider-color);
+          border-radius: 4px;
+          background: var(--card-background-color);
+          color: var(--primary-text-color);
+          font-size: 14px;
+          transition: border-color 0.2s;
+        }
+        
+        .input:focus {
+          outline: none;
+          border-color: var(--primary-color);
+        }
+        
+        .input:invalid {
+          border-color: var(--error-color);
+        }
+        
+        .switch-group {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 12px;
+          background: var(--card-background-color);
+          border-radius: 8px;
+          border: 1px solid var(--divider-color);
+          margin-bottom: 8px;
+        }
+        
+        .switch-label {
+          font-size: 14px;
+          font-weight: 500;
+          color: var(--primary-text-color);
+        }
+        
+        .switch {
+          position: relative;
+          width: 48px;
+          height: 24px;
+          background: var(--disabled-color);
+          border-radius: 12px;
+          cursor: pointer;
+          transition: background-color 0.3s;
+        }
+        
+        .switch.on {
+          background: var(--primary-color);
+        }
+        
+        .switch-thumb {
+          position: absolute;
+          top: 2px;
+          left: 2px;
+          width: 20px;
+          height: 20px;
+          background: white;
+          border-radius: 50%;
+          transition: transform 0.3s;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        .switch.on .switch-thumb {
+          transform: translateX(24px);
+        }
+        
+        .help-text {
+          font-size: 12px;
           color: var(--secondary-text-color);
           margin-top: 4px;
           line-height: 1.4;
         }
         
-        .warning {
+        .warning-text {
           color: var(--warning-color);
+          font-weight: 500;
+        }
+        
+        .success-indicator {
+          background: var(--success-color);
+          color: white;
+          padding: 8px 12px;
+          border-radius: 4px;
+          text-align: center;
           font-weight: 500;
         }
       </style>
       
-      <div class="form">
-        <div class="form-section">
-          <div class="section-title">Basic Settings</div>
+      <div class="card-config">
+        <div class="config-section">
+          <div class="section-title">
+            <ha-icon icon="mdi:cog"></ha-icon>
+            Basic Settings
+          </div>
           
           <div class="form-row full-width">
-            <paper-input
-              label="Card Title"
-              value="${this._config?.title || 'YAWC Weather'}"
-              @value-changed="${this._valueChanged}"
-              data-config-attribute="title"
-            ></paper-input>
-            <div class="info">Display name for the weather card</div>
+            <div class="input-group">
+              <label class="label">Card Title</label>
+              <input 
+                type="text" 
+                class="input" 
+                id="title"
+                value="${this._config?.title || 'YAWC Weather'}"
+                placeholder="YAWC Weather"
+              />
+              <div class="help-text">Display name for the weather card</div>
+            </div>
           </div>
           
           <div class="form-row">
-            <div>
-              <paper-input
-                label="Latitude (optional)"
+            <div class="input-group">
+              <label class="label">Latitude (optional)</label>
+              <input 
+                type="number" 
+                class="input" 
+                id="latitude"
                 value="${this._config?.latitude || ''}"
-                @value-changed="${this._valueChanged}"
-                data-config-attribute="latitude"
-                type="number"
+                placeholder="40.7128"
                 step="any"
-              ></paper-input>
-              <div class="info">Leave empty to use Home Assistant's latitude</div>
+              />
+              <div class="help-text">Leave empty to use Home Assistant's latitude</div>
             </div>
             
-            <div>
-              <paper-input
-                label="Longitude (optional)"
+            <div class="input-group">
+              <label class="label">Longitude (optional)</label>
+              <input 
+                type="number" 
+                class="input" 
+                id="longitude"
                 value="${this._config?.longitude || ''}"
-                @value-changed="${this._valueChanged}"
-                data-config-attribute="longitude"
-                type="number"
+                placeholder="-74.0060"
                 step="any"
-              ></paper-input>
-              <div class="info">Leave empty to use Home Assistant's longitude</div>
+              />
+              <div class="help-text">Leave empty to use Home Assistant's longitude</div>
             </div>
           </div>
           
           <div class="form-row">
-            <div>
-              <paper-input
-                label="Update Interval (minutes)"
+            <div class="input-group">
+              <label class="label">Update Interval (minutes)</label>
+              <input 
+                type="number" 
+                class="input" 
+                id="update_interval"
                 value="${(this._config?.update_interval || 300000) / 60000}"
-                @value-changed="${this._intervalChanged}"
-                type="number"
+                placeholder="5"
                 min="1"
                 max="60"
-              ></paper-input>
-              <div class="info">How often to refresh weather data (default: 5 minutes)</div>
+              />
+              <div class="help-text">How often to refresh weather data (1-60 minutes)</div>
             </div>
             
-            <div>
-              <paper-input
-                label="Forecast Days"
+            <div class="input-group">
+              <label class="label">Forecast Days</label>
+              <input 
+                type="number" 
+                class="input" 
+                id="forecast_days"
                 value="${this._config?.forecast_days || 5}"
-                @value-changed="${this._valueChanged}"
-                data-config-attribute="forecast_days"
-                type="number"
+                placeholder="5"
                 min="1"
                 max="7"
-              ></paper-input>
-              <div class="info">Number of forecast days to display (1-7)</div>
+              />
+              <div class="help-text">Number of forecast days to display (1-7)</div>
             </div>
           </div>
         </div>
         
-        <div class="form-section">
-          <div class="section-title">Display Options</div>
-          
-          <div class="switch-row">
-            <label>Show Weather Alerts</label>
-            <ha-switch
-              .checked="${this._config?.show_alerts !== false}"
-              @change="${this._switchChanged}"
-              data-config-attribute="show_alerts"
-            ></ha-switch>
+        <div class="config-section">
+          <div class="section-title">
+            <ha-icon icon="mdi:eye"></ha-icon>
+            Display Options
           </div>
-          <div class="info">Display NWS weather alerts and warnings</div>
           
-          <div class="switch-row">
-            <label>Show Hourly Forecast</label>
-            <ha-switch
-              .checked="${this._config?.show_hourly !== false}"
-              @change="${this._switchChanged}"
-              data-config-attribute="show_hourly"
-            ></ha-switch>
+          <div class="switch-group">
+            <label class="switch-label">Show Weather Alerts</label>
+            <div class="switch ${this._config?.show_alerts !== false ? 'on' : ''}" id="show_alerts">
+              <div class="switch-thumb"></div>
+            </div>
           </div>
-          <div class="info">Show 12-hour hourly weather forecast</div>
+          <div class="help-text">Display NWS weather alerts and warnings with severity indicators</div>
           
-          <div class="switch-row">
-            <label>Show Extended Forecast</label>
-            <ha-switch
-              .checked="${this._config?.show_forecast !== false}"
-              @change="${this._switchChanged}"
-              data-config-attribute="show_forecast"
-            ></ha-switch>
+          <div class="switch-group">
+            <label class="switch-label">Show Hourly Forecast</label>
+            <div class="switch ${this._config?.show_hourly !== false ? 'on' : ''}" id="show_hourly">
+              <div class="switch-thumb"></div>
+            </div>
           </div>
-          <div class="info">Show multi-day detailed forecast</div>
+          <div class="help-text">Show scrollable 12-hour weather forecast timeline</div>
           
-          <div class="switch-row">
-            <label>Show YAWC Branding</label>
-            <ha-switch
-              .checked="${this._config?.show_branding !== false}"
-              @change="${this._switchChanged}"
-              data-config-attribute="show_branding"
-            ></ha-switch>
+          <div class="switch-group">
+            <label class="switch-label">Show Extended Forecast</label>
+            <div class="switch ${this._config?.show_forecast !== false ? 'on' : ''}" id="show_forecast">
+              <div class="switch-thumb"></div>
+            </div>
           </div>
-          <div class="info">Display YAWC version in footer</div>
+          <div class="help-text">Show detailed multi-day weather forecast with day/night periods</div>
+          
+          <div class="switch-group">
+            <label class="switch-label">Show YAWC Branding</label>
+            <div class="switch ${this._config?.show_branding !== false ? 'on' : ''}" id="show_branding">
+              <div class="switch-thumb"></div>
+            </div>
+          </div>
+          <div class="help-text">Display YAWC version information in card footer</div>
         </div>
         
-        <div class="form-section">
-          <div class="section-title">Requirements</div>
-          <div class="info">
-            <strong>Location:</strong> YAWC requires coordinates within US territories for NWS data access.<br>
-            <strong>API Limits:</strong> NWS APIs are free but rate-limited. Recommended minimum update interval is 5 minutes.<br>
-            <strong class="warning">Note:</strong> Radar features are not yet implemented in this version.
+        <div class="config-section">
+          <div class="section-title">
+            <ha-icon icon="mdi:information"></ha-icon>
+            Requirements & Information
+          </div>
+          
+          <div class="help-text">
+            <strong>📍 Location:</strong> YAWC requires coordinates within US territories (including Alaska, Hawaii, and US territories) for NWS data access.<br><br>
+            
+            <strong>🌐 API Usage:</strong> Uses free NWS APIs with built-in rate limiting. Recommended minimum update interval is 5 minutes to respect API limits.<br><br>
+            
+            <strong>🎯 Features:</strong> This version includes weather alerts, hourly forecasts, detailed current conditions, and multi-day forecasts.<br><br>
+            
+            <strong class="warning-text">📡 Note:</strong> Animated radar and storm tracking features are planned for a future release.
+          </div>
+          
+          <div class="success-indicator" style="margin-top: 16px;">
+            ✅ Configuration Editor Working
           </div>
         </div>
       </div>
     `;
+    
+    this.attachEventListeners();
   }
 
-  _valueChanged(ev) {
-    if (!this._config || !this.shadowRoot) {
-      return;
-    }
-    const target = ev.target;
-    const configAttribute = target.dataset.configAttribute;
-    if (configAttribute) {
-      let value = target.value;
-      
-      // Handle numeric values
-      if (['latitude', 'longitude', 'forecast_days'].includes(configAttribute)) {
-        value = value === '' ? null : parseFloat(value);
+  updateValues() {
+    // Update input values when config changes
+    const title = this.shadowRoot.getElementById('title');
+    if (title) title.value = this._config?.title || 'YAWC Weather';
+    
+    const latitude = this.shadowRoot.getElementById('latitude');
+    if (latitude) latitude.value = this._config?.latitude || '';
+    
+    const longitude = this.shadowRoot.getElementById('longitude');
+    if (longitude) longitude.value = this._config?.longitude || '';
+    
+    const updateInterval = this.shadowRoot.getElementById('update_interval');
+    if (updateInterval) updateInterval.value = (this._config?.update_interval || 300000) / 60000;
+    
+    const forecastDays = this.shadowRoot.getElementById('forecast_days');
+    if (forecastDays) forecastDays.value = this._config?.forecast_days || 5;
+    
+    // Update switches
+    const switches = ['show_alerts', 'show_hourly', 'show_forecast', 'show_branding'];
+    switches.forEach(switchId => {
+      const switchEl = this.shadowRoot.getElementById(switchId);
+      if (switchEl) {
+        const isOn = this._config?.[switchId] !== false;
+        switchEl.classList.toggle('on', isOn);
       }
-      
-      const newConfig = {
-        ...this._config,
-        [configAttribute]: value,
-      };
-      this.configChanged(newConfig);
-    }
+    });
   }
 
-  _intervalChanged(ev) {
-    if (!this._config || !this.shadowRoot) {
-      return;
+  attachEventListeners() {
+    // Text inputs
+    const inputs = ['title', 'latitude', 'longitude', 'forecast_days'];
+    inputs.forEach(inputId => {
+      const input = this.shadowRoot.getElementById(inputId);
+      if (input) {
+        input.addEventListener('input', (e) => {
+          let value = e.target.value;
+          
+          // Handle different data types
+          if (['latitude', 'longitude', 'forecast_days'].includes(inputId)) {
+            value = value === '' ? null : parseFloat(value);
+          }
+          
+          this.updateConfig(inputId, value);
+        });
+      }
+    });
+
+    // Update interval (special handling)
+    const updateIntervalInput = this.shadowRoot.getElementById('update_interval');
+    if (updateIntervalInput) {
+      updateIntervalInput.addEventListener('input', (e) => {
+        const minutes = parseInt(e.target.value) || 5;
+        this.updateConfig('update_interval', minutes * 60000);
+      });
     }
-    const minutes = parseInt(ev.target.value) || 5;
+
+    // Toggle switches
+    const switches = ['show_alerts', 'show_hourly', 'show_forecast', 'show_branding'];
+    switches.forEach(switchId => {
+      const switchEl = this.shadowRoot.getElementById(switchId);
+      if (switchEl) {
+        switchEl.addEventListener('click', () => {
+          const isCurrentlyOn = switchEl.classList.contains('on');
+          switchEl.classList.toggle('on', !isCurrentlyOn);
+          this.updateConfig(switchId, !isCurrentlyOn);
+        });
+      }
+    });
+  }
+
+  updateConfig(key, value) {
     const newConfig = {
       ...this._config,
-      update_interval: minutes * 60000,
+      [key]: value
     };
+    this._config = newConfig;
     this.configChanged(newConfig);
-  }
-
-  _switchChanged(ev) {
-    if (!this._config || !this.shadowRoot) {
-      return;
-    }
-    const target = ev.target;
-    const configAttribute = target.dataset.configAttribute;
-    if (configAttribute) {
-      const newConfig = {
-        ...this._config,
-        [configAttribute]: target.checked,
-      };
-      this.configChanged(newConfig);
-    }
   }
 }
 
