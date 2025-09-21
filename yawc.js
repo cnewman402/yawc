@@ -16,7 +16,7 @@ class YetAnotherWeatherCard extends HTMLElement {
       show_forecast: config.show_forecast !== false,
       show_hourly: config.show_hourly !== false,
       show_radar: config.show_radar !== false,
-      radar_type: config.radar_type || 'nws', // 'nws' or 'windy'
+      radar_type: config.radar_type || 'composite', // 'composite', 'windy', or 'links'
       forecast_days: config.forecast_days || 5,
       radar_height: config.radar_height || 450,
       latitude: config.latitude || null,
@@ -115,10 +115,28 @@ class YetAnotherWeatherCard extends HTMLElement {
       if (this._config.show_radar) h += this.radar();
       if (this._config.show_hourly) h += this.hourly();
       if (this._config.show_forecast) h += this.forecast();
-      h += `<div class="footer">Data: National Weather Service | YAWC v2.5.0</div>`;
+      h += `<div class="footer">Data: National Weather Service | YAWC v2.6.0</div>`;
       h += '</ha-card>';
     }
     this.shadowRoot.innerHTML = h;
+    
+    // Add event listener for radar refresh if using composite
+    if (this._config.show_radar && this._config.radar_type === 'composite') {
+      this.setupRadarRefresh();
+    }
+  }
+
+  setupRadarRefresh() {
+    const btn = this.shadowRoot.querySelector('.radar-refresh');
+    if (btn) {
+      btn.addEventListener('click', () => {
+        const img = this.shadowRoot.querySelector('.radar-img');
+        if (img) {
+          const baseUrl = img.src.split('?t=')[0];
+          img.src = baseUrl + '?t=' + Date.now();
+        }
+      });
+    }
   }
 
   header() {
@@ -192,13 +210,13 @@ class YetAnotherWeatherCard extends HTMLElement {
   radar() {
     const lat = this._weatherData.coords.lat;
     const lon = this._weatherData.coords.lon;
-    const st = this._weatherData.radarStation || 'KLOT'; // Default to Chicago if no station
+    const st = this._weatherData.radarStation || 'KLOT';
     
     let h = `<div class="radar">
       <div class="sec-hdr">Weather Radar</div>`;
     
     if (this._config.radar_type === 'windy') {
-      // Windy embed - note this may have SSE errors but works
+      // Windy embed (may have SSE errors but works)
       h += `<div class="radar-container">
         <iframe 
           width="100%" 
@@ -208,27 +226,36 @@ class YetAnotherWeatherCard extends HTMLElement {
           style="border: 0; border-radius: 8px;">
         </iframe>
       </div>
-      <div class="radar-note">Windy.com Interactive Radar</div>`;
-    } else {
-      // NWS radar embed (default)
+      <div class="radar-note">Windy.com Interactive Radar (may show console errors)</div>`;
+    } else if (this._config.radar_type === 'composite') {
+      // Use NOAA WMS composite radar image (most reliable)
+      const bbox = `${lon - 2.5},${lat - 2},${lon + 2.5},${lat + 2}`;
+      const radarUrl = `https://opengeo.ncep.noaa.gov/geoserver/conus/conus_bref_qcd/ows?service=WMS&version=1.3.0&request=GetMap&layers=conus_bref_qcd&bbox=${bbox}&width=600&height=400&srs=EPSG:4326&format=image/png&transparent=true`;
+      
       h += `<div class="radar-container">
-        <iframe 
-          id="nws-radar-frame"
-          width="100%" 
-          height="${this._config.radar_height}" 
-          src="https://radar.weather.gov/ridge/standard/${st}" 
-          frameborder="0"
-          style="border: 0; border-radius: 8px; background: #000;">
-        </iframe>
+        <img class="radar-img" 
+             src="${radarUrl}?t=${Date.now()}" 
+             alt="NOAA Composite Radar"
+             onerror="this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2MDAiIGhlaWdodD0iNDAwIj48cmVjdCB3aWR0aD0iNjAwIiBoZWlnaHQ9IjQwMCIgZmlsbD0iIzFhMWExYSIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmaWxsPSIjNjY2IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LXNpemU9IjE4IiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiI+UmFkYXIgVGVtcG9yYXJpbHkgVW5hdmFpbGFibGU8L3RleHQ+PHRleHQgeD0iNTAlIiB5PSI2MCUiIGZpbGw9IiM2NjYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtc2l6ZT0iMTQiIGZvbnQtZmFtaWx5PSJzYW5zLXNlcmlmIj5Vc2UgbGlua3MgYmVsb3cgZm9yIGFsdGVybmF0aXZlczwvdGV4dD48L3N2Zz4='">
+        <button class="radar-refresh">↻ Refresh</button>
       </div>
-      <div class="radar-note">NWS NEXRAD Station: ${st}</div>`;
+      <div class="radar-note">NOAA Composite Radar - Updates every 5-10 minutes</div>`;
+    } else {
+      // Links only mode
+      h += `<div class="radar-placeholder">
+        <div class="radar-placeholder-text">
+          <div>📡 Radar Station: ${st}</div>
+          <div>Click any link below to view radar:</div>
+        </div>
+      </div>`;
     }
     
     h += `<div class="links">
-      <a href="https://radar.weather.gov/station/${st}/standard" target="_blank">NWS Full Screen</a>
+      <a href="https://radar.weather.gov/station/${st}" target="_blank">NWS Radar</a>
       <a href="https://www.windy.com/?radar,${lat},${lon},8" target="_blank">Windy.com</a>
       <a href="https://weather.com/weather/radar/interactive/l/${lat},${lon}" target="_blank">Weather.com</a>
       <a href="https://www.wunderground.com/radar/us/${st.toLowerCase()}" target="_blank">WUnderground</a>
+      <a href="https://zoom.earth/storms/${lat},${lon},7z" target="_blank">Zoom Earth</a>
     </div></div>`;
     
     return h;
@@ -415,10 +442,48 @@ ha-card {
   margin: 16px;
 }
 .radar-container {
-  background: #000;
+  background: #1a1a1a;
   border-radius: 8px;
   overflow: hidden;
   position: relative;
+  min-height: 400px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.radar-img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.radar-refresh {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  padding: 8px 12px;
+  background: rgba(0,0,0,0.8);
+  color: white;
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.radar-refresh:hover {
+  background: rgba(0,0,0,0.95);
+  border-color: rgba(255,255,255,0.4);
+}
+.radar-placeholder {
+  padding: 60px 20px;
+  background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+  border-radius: 8px;
+  text-align: center;
+}
+.radar-placeholder-text {
+  color: #888;
+  font-size: 14px;
+}
+.radar-placeholder-text div {
+  margin: 8px 0;
 }
 .radar-note {
   text-align: center;
@@ -433,7 +498,7 @@ ha-card {
   flex-wrap: wrap;
 }
 .links a {
-  padding: 6px 12px;
+  padding: 8px 12px;
   background: var(--primary-color);
   color: white;
   text-decoration: none;
@@ -539,7 +604,7 @@ ha-card {
     return { 
       title: 'YAWC Weather', 
       show_radar: true, 
-      radar_type: 'nws',
+      radar_type: 'composite',
       radar_height: 450
     }; 
   }
@@ -550,6 +615,6 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: 'yawc-card',
   name: 'YAWC - Yet Another Weather Card',
-  description: 'NWS weather card with working radar'
+  description: 'NWS weather card with working composite radar'
 });
-console.log('YAWC v2.5.0 Loaded - NWS Radar implementation!');
+console.log('YAWC v2.6.0 Loaded - Fixed radar implementation!');
