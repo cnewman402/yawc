@@ -319,10 +319,10 @@ class YetAnotherWeatherCard extends HTMLElement {
            '</div>' +
            '<div class="radar-display" style="height: ' + this._config.radar_height + 'px;">' +
            '<div class="radar-image-container">' +
-           '<img src="' + radarUrl + '" alt="NEXRAD Radar" class="radar-image" onerror="this.getRootNode().host.handleRadarError(this)" onload="this.getRootNode().host.handleRadarLoad(this)" />' +
+           '<img src="' + radarUrl + '" alt="NEXRAD Radar" class="radar-image" />' +
            '<div class="radar-overlay">' +
            '<div class="radar-timestamp">Live NEXRAD Data</div>' +
-           '<div class="radar-refresh" onclick="this.getRootNode().host.refreshRadar()">↻ Refresh</div>' +
+           '<div class="radar-refresh">↻ Refresh</div>' +
            '</div>' +
            '</div>' +
            '</div>' +
@@ -331,6 +331,48 @@ class YetAnotherWeatherCard extends HTMLElement {
            '<div class="radar-link"><a href="https://radar.weather.gov/station/' + radarStation + '" target="_blank">View on NWS Radar →</a></div>' +
            '</div>' +
            '</div>';
+  }
+
+  render() {
+    if (!this._hass) return;
+
+    if (!this._weatherData) {
+      this.shadowRoot.innerHTML = this.getLoadingHTML();
+      return;
+    }
+
+    if (this._weatherData.error) {
+      this.shadowRoot.innerHTML = this.getErrorHTML();
+      return;
+    }
+
+    this.shadowRoot.innerHTML = this.getMainHTML();
+    
+    // Add event listeners after rendering
+    this.attachEventListeners();
+  }
+
+  attachEventListeners() {
+    // Radar refresh button
+    var refreshBtn = this.shadowRoot.querySelector('.radar-refresh');
+    if (refreshBtn) {
+      var self = this;
+      refreshBtn.addEventListener('click', function() {
+        self.refreshRadar();
+      });
+    }
+
+    // Radar image error handling
+    var radarImg = this.shadowRoot.querySelector('.radar-image');
+    if (radarImg) {
+      var self = this;
+      radarImg.addEventListener('error', function() {
+        self.handleRadarError(this);
+      });
+      radarImg.addEventListener('load', function() {
+        self.handleRadarLoad(this);
+      });
+    }
   }
 
   findNearestRadarStation() {
