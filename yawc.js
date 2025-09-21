@@ -14,18 +14,20 @@ class YetAnotherWeatherCard extends HTMLElement {
       throw new Error('Invalid configuration');
     }
     
-    this._config = {};
-    this._config.title = config.title || 'YAWC Weather';
-    this._config.update_interval = config.update_interval || 300000;
-    this._config.show_alerts = config.show_alerts !== false;
-    this._config.show_forecast = config.show_forecast !== false;
-    this._config.show_hourly = config.show_hourly !== false;
-    this._config.show_radar = config.show_radar !== false;
-    this._config.show_branding = config.show_branding !== false;
-    this._config.forecast_days = config.forecast_days || 5;
-    this._config.radar_height = config.radar_height || 500;
-    this._config.latitude = config.latitude;
-    this._config.longitude = config.longitude;
+    // Create a completely new object to avoid read-only property issues
+    this._config = {
+      title: config.title || 'YAWC Weather',
+      update_interval: config.update_interval || 300000,
+      show_alerts: config.show_alerts !== false,
+      show_forecast: config.show_forecast !== false,
+      show_hourly: config.show_hourly !== false,
+      show_radar: config.show_radar !== false,
+      show_branding: config.show_branding !== false,
+      forecast_days: config.forecast_days || 5,
+      radar_height: config.radar_height || 500,
+      latitude: config.latitude || null,
+      longitude: config.longitude || null
+    };
   }
 
   set hass(hass) {
