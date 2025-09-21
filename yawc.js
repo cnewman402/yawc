@@ -375,7 +375,7 @@ class YetAnotherWeatherCard extends HTMLElement {
   }
 
   static getConfigElement() {
-    return document.createElement('yawc-card-editor');
+    return document.createElement('yawc-editor');
   }
 
   static getStubConfig() {
@@ -489,13 +489,13 @@ class YawcCardEditor extends HTMLElement {
   }
 }
 
-customElements.define('yawc-card', YetAnotherWeatherCard);
-customElements.define('yawc-card-editor', YawcCardEditor);
+customElements.define('yawc', YetAnotherWeatherCard);
+customElements.define('yawc-editor', YawcCardEditor);
 
 // Register the card
 window.customCards = window.customCards || [];
 window.customCards.push({
-  type: 'yawc-card',
+  type: 'yawc',
   name: 'YAWC - Yet Another Weather Card (NWS)',
   description: 'A weather card using National Weather Service API with current conditions and 7-day forecast',
   preview: true,
