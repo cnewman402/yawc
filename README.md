@@ -101,7 +101,7 @@ forecast_days: 5              # Number of forecast days (1-7)
 
 **Manual Override**: Optionally specify custom coordinates in the card configuration for different locations.
 
-![Location Settings](path-to-location-settings-image.png)
+![Location Settings](screenshots/main.png)
 
 ## 🎛️ Configuration Options
 
