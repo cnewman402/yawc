@@ -5,6 +5,7 @@ class YetAnotherWeatherCard extends HTMLElement {
     this._config = {};
     this._weatherData = null;
     this._updateInterval = null;
+    this._clockInterval = null;
     this._hasRenderedRadar = false;
   }
 
@@ -41,11 +42,13 @@ class YetAnotherWeatherCard extends HTMLElement {
 
   connectedCallback() { 
     this.startUpdateInterval();
+    this.startClock();
     this._hasRenderedRadar = false;
   }
   
   disconnectedCallback() { 
     this.stopUpdateInterval();
+    this.stopClock();
     this._hasRenderedRadar = false;
   }
 
@@ -58,6 +61,27 @@ class YetAnotherWeatherCard extends HTMLElement {
     if (this._updateInterval) {
       clearInterval(this._updateInterval);
       this._updateInterval = null;
+    }
+  }
+
+  startClock() {
+    this.stopClock();
+    this._clockInterval = setInterval(() => this.updateClock(), 1000);
+  }
+
+  stopClock() {
+    if (this._clockInterval) {
+      clearInterval(this._clockInterval);
+      this._clockInterval = null;
+    }
+  }
+
+  updateClock() {
+    const timeEl = this.shadowRoot.querySelector('.time');
+    if (timeEl) {
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      timeEl.textContent = timeStr;
     }
   }
 
@@ -193,6 +217,9 @@ class YetAnotherWeatherCard extends HTMLElement {
     if (refreshBtn) {
       refreshBtn.addEventListener('click', () => this.fetchWeatherData());
     }
+    
+    // Start the live clock after rendering
+    this.startClock();
   }
 
   header() {
@@ -234,6 +261,10 @@ class YetAnotherWeatherCard extends HTMLElement {
     if (c?.textDescription) cond = c.textDescription;
     else if (f?.[0]?.shortForecast) cond = f[0].shortForecast;
 
+    // Get current time
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
     let h = `<div class="current">
       <div class="main">
         <div class="temp-block">
@@ -241,6 +272,7 @@ class YetAnotherWeatherCard extends HTMLElement {
           <div class="icon">${this.getIcon(cond)}</div>
         </div>
         <div class="cond">${cond}</div>
+        <div class="time">${timeStr}</div>
       </div>
       <div class="details">`;
     
@@ -269,7 +301,7 @@ class YetAnotherWeatherCard extends HTMLElement {
     const zoom = this._config.radar_zoom;
     const height = this._config.radar_height;
     
-    const windyUrl = `https://embed.windy.com/embed2.html?lat=${lat}&lon=${lon}&detailLat=${lat}&detailLon=${lon}&width=650&height=${height}&zoom=${zoom}&level=surface&overlay=radar&product=radar&menu=&message=&marker=false&calendar=now&pressure=&type=map&location=coordinates&detail=&metricWind=mph&metricTemp=%C2%B0F&radarRange=-1`;
+    const windyUrl = `https://embed.windy.com/embed2.html?lat=${lat}&lon=${lon}&detailLat=${lat}&detailLon=${lon}&width=650&height=${height}&zoom=${zoom}&level=surface&overlay=radar&product=radar&menu=&message=&marker=true&calendar=now&pressure=&type=map&location=coordinates&detail=&metricWind=mph&metricTemp=%C2%B0F&radarRange=-1`;
     
     let h = '<div class="radar">';
     
@@ -396,6 +428,7 @@ ha-card { background: var(--card-background-color); border-radius: var(--ha-card
 .main { display: flex; align-items: center; gap: 20px; margin-bottom: 16px; }
 .temp-block { display: flex; align-items: center; gap: 12px; }
 .temp { font-size: 48px; font-weight: 300; line-height: 1; }
+.time { font-size: 48px; font-weight: 300; line-height: 1; color: var(--secondary-text-color); }
 .icon { font-size: 36px; }
 .cond { font-size: 18px; flex: 1; }
 .details { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
