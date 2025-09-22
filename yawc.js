@@ -20,7 +20,7 @@ class YetAnotherWeatherCard extends HTMLElement {
       show_radar: config.show_radar !== false,
       show_branding: config.show_branding !== false,
       
-      // NEW: Optional header configurations
+      // Optional header configurations
       show_radar_header: config.show_radar_header !== false,
       show_hourly_header: config.show_hourly_header !== false,
       show_forecast_header: config.show_forecast_header !== false,
@@ -96,27 +96,15 @@ class YetAnotherWeatherCard extends HTMLElement {
     }
 
     try {
-      const pointResp = await fetch(`https://api.weather.gov/points/${lat},${lon}`);
-      if (!pointResp.ok) throw new Error('Failed to get NWS data');
-      const point = await pointResp.json();
-      const props = point.properties;
+      // Auto-detect weather source based on location
+      const source = this.detectWeatherSource(lat, lon);
+      console.log(`YAWC: Using ${source} for coordinates ${lat}, ${lon}`);
       
-      const [forecast, hourly, alerts, current] = await Promise.all([
-        fetch(props.forecast).then(r => r.json()),
-        fetch(props.forecastHourly).then(r => r.json()).catch(() => null),
-        fetch(`https://api.weather.gov/alerts/active?point=${lat},${lon}`).then(r => r.json()).catch(() => null),
-        this.getCurrentObs(props.observationStations)
-      ]);
-
-      this._weatherData = {
-        current: current,
-        forecast: forecast.properties.periods,
-        hourly: hourly ? hourly.properties.periods : [],
-        alerts: alerts ? alerts.features : [],
-        coords: { lat, lon },
-        radarStation: props.radarStation,
-        lastUpdated: new Date()
-      };
+      if (source === 'nws') {
+        await this.fetchNWSData(lat, lon);
+      } else {
+        await this.fetchOpenMeteoData(lat, lon);
+      }
       
       if (isUpdate) {
         this.updateWeatherOnly();
@@ -125,9 +113,151 @@ class YetAnotherWeatherCard extends HTMLElement {
       }
     } catch (error) {
       console.error('Weather fetch error:', error);
-      this._weatherData = { error: error.message, lastUpdated: new Date() };
+      this._weatherData = { 
+        error: error.message,
+        lastUpdated: new Date()
+      };
       this.render();
     }
+  }
+
+  detectWeatherSource(lat, lon) {
+    // NWS covers US, territories, and some adjacent waters
+    // More restrictive bounds to avoid calling NWS for international locations
+    if (lat >= 18.0 && lat <= 71.0 && lon >= -179.0 && lon <= -66.0) {
+      // Additional check: exclude obvious international locations
+      if (lat > 49.0 && lon > -125.0) return 'openmeteo'; // Most of Canada
+      if (lat < 25.0 && lon > -97.0) return 'openmeteo'; // Most of Caribbean/Central America
+      return 'nws';
+    }
+    return 'openmeteo';
+  }
+
+  async fetchNWSData(lat, lon) {
+    const pointResp = await fetch(`https://api.weather.gov/points/${lat},${lon}`);
+    if (!pointResp.ok) throw new Error('Failed to get NWS data');
+    const point = await pointResp.json();
+    const props = point.properties;
+    
+    const [forecast, hourly, alerts, current] = await Promise.all([
+      fetch(props.forecast).then(r => r.json()),
+      fetch(props.forecastHourly).then(r => r.json()).catch(() => null),
+      fetch(`https://api.weather.gov/alerts/active?point=${lat},${lon}`).then(r => r.json()).catch(() => null),
+      this.getCurrentObs(props.observationStations)
+    ]);
+
+    this._weatherData = {
+      source: 'nws',
+      current: current,
+      forecast: forecast.properties.periods,
+      hourly: hourly ? hourly.properties.periods : [],
+      alerts: alerts ? alerts.features : [],
+      coords: { lat, lon },
+      radarStation: props.radarStation,
+      lastUpdated: new Date()
+    };
+  }
+
+  async fetchOpenMeteoData(lat, lon) {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m,weather_code,visibility,pressure_msl&hourly=temperature_2m,precipitation_probability,weather_code&daily=temperature_2m_max,temperature_2m_min,weather_code,precipitation_probability_max&timezone=auto&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch`;
+    
+    const response = await fetch(url);
+    if (!response.ok) throw new Error('Failed to get weather data');
+    const data = await response.json();
+
+    // Convert Open-Meteo data to match NWS structure
+    this._weatherData = {
+      source: 'openmeteo',
+      current: this.convertOpenMeteoCurrent(data.current, data.current_units),
+      forecast: this.convertOpenMeteoForecast(data.daily, data.daily_units),
+      hourly: this.convertOpenMeteoHourly(data.hourly, data.hourly_units),
+      alerts: [], // Open-Meteo doesn't provide alerts
+      coords: { lat, lon },
+      lastUpdated: new Date()
+    };
+  }
+
+  convertOpenMeteoCurrent(current, units) {
+    if (!current) return null;
+    
+    return {
+      temperature: { value: current.temperature_2m },
+      relativeHumidity: { value: current.relative_humidity_2m },
+      windSpeed: { value: current.wind_speed_10m * 0.44704 }, // mph to m/s
+      windDirection: { value: current.wind_direction_10m },
+      barometricPressure: { value: current.pressure_msl * 100 }, // hPa to Pa
+      visibility: { value: current.visibility ? current.visibility * 1000 : null }, // km to m
+      textDescription: this.getWeatherDescription(current.weather_code)
+    };
+  }
+
+  convertOpenMeteoForecast(daily, units) {
+    if (!daily || !daily.time) return [];
+    
+    const forecast = [];
+    for (let i = 0; i < Math.min(daily.time.length, 14); i++) { // 7 days = 14 periods (day/night)
+      const date = new Date(daily.time[i]);
+      
+      // Day period
+      forecast.push({
+        name: i === 0 ? 'Today' : date.toLocaleDateString('en', { weekday: 'long' }),
+        temperature: Math.round(daily.temperature_2m_max[i]),
+        temperatureUnit: 'F',
+        shortForecast: this.getWeatherDescription(daily.weather_code[i]),
+        detailedForecast: this.getWeatherDescription(daily.weather_code[i])
+      });
+      
+      // Night period (if we have data)
+      if (i < daily.time.length - 1) {
+        forecast.push({
+          name: i === 0 ? 'Tonight' : date.toLocaleDateString('en', { weekday: 'long' }) + ' Night',
+          temperature: Math.round(daily.temperature_2m_min[i]),
+          temperatureUnit: 'F',
+          shortForecast: this.getWeatherDescription(daily.weather_code[i]),
+          detailedForecast: this.getWeatherDescription(daily.weather_code[i])
+        });
+      }
+    }
+    return forecast;
+  }
+
+  convertOpenMeteoHourly(hourly, units) {
+    if (!hourly || !hourly.time) return [];
+    
+    const converted = [];
+    const now = new Date();
+    
+    for (let i = 0; i < Math.min(hourly.time.length, 24); i++) { // Next 24 hours
+      const time = new Date(hourly.time[i]);
+      if (time >= now) {
+        converted.push({
+          startTime: hourly.time[i],
+          temperature: Math.round(hourly.temperature_2m[i]),
+          shortForecast: this.getWeatherDescription(hourly.weather_code[i]),
+          probabilityOfPrecipitation: { 
+            value: hourly.precipitation_probability ? hourly.precipitation_probability[i] : null 
+          }
+        });
+      }
+    }
+    return converted.slice(0, 12); // Limit to 12 hours
+  }
+
+  getWeatherDescription(code) {
+    // WMO Weather interpretation codes
+    const descriptions = {
+      0: 'Clear sky', 1: 'Mainly clear', 2: 'Partly cloudy', 3: 'Overcast',
+      45: 'Fog', 48: 'Depositing rime fog',
+      51: 'Light drizzle', 53: 'Moderate drizzle', 55: 'Dense drizzle',
+      56: 'Light freezing drizzle', 57: 'Dense freezing drizzle',
+      61: 'Slight rain', 63: 'Moderate rain', 65: 'Heavy rain',
+      66: 'Light freezing rain', 67: 'Heavy freezing rain',
+      71: 'Slight snow', 73: 'Moderate snow', 75: 'Heavy snow',
+      77: 'Snow grains', 80: 'Slight rain showers', 81: 'Moderate rain showers',
+      82: 'Violent rain showers', 85: 'Slight snow showers', 86: 'Heavy snow showers',
+      95: 'Thunderstorm', 96: 'Thunderstorm with slight hail', 99: 'Thunderstorm with heavy hail'
+    };
+    return descriptions[code] || 'Unknown';
   }
 
   async getCurrentObs(stationsUrl) {
@@ -311,7 +441,8 @@ class YetAnotherWeatherCard extends HTMLElement {
     const zoom = this._config.radar_zoom;
     const height = this._config.radar_height;
     
-    const windyUrl = `https://embed.windy.com/embed2.html?lat=${lat}&lon=${lon}&detailLat=${lat}&detailLon=${lon}&width=650&height=${height}&zoom=${zoom}&level=surface&overlay=radar&product=radar&menu=&message=&marker=true&calendar=now&pressure=&type=map&location=coordinates&detail=&metricWind=mph&metricTemp=%C2%B0F&radarRange=-1`;
+    // NO MARKER PARAMETER - completely removed
+    const windyUrl = `https://embed.windy.com/embed2.html?lat=${lat}&lon=${lon}&detailLat=${lat}&detailLon=${lon}&width=650&height=${height}&zoom=${zoom}&level=surface&overlay=radar&product=radar&menu=&message=&calendar=now&pressure=&type=map&location=coordinates&detail=&metricWind=mph&metricTemp=%C2%B0F&radarRange=-1`;
     
     let h = '<div class="radar">';
     
@@ -503,207 +634,3 @@ class YawcCardEditor extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: 'open' });
-  }
-
-  setConfig(config) {
-    this._config = config || {};
-    this.render();
-  }
-
-  configChanged(newConfig) {
-    const event = new Event('config-changed', {
-      bubbles: true,
-      composed: true,
-    });
-    event.detail = { config: newConfig };
-    this.dispatchEvent(event);
-  }
-
-  render() {
-    this.shadowRoot.innerHTML = `
-      <style>
-        .editor { padding: 16px; }
-        .section { background: var(--secondary-background-color); padding: 12px; border-radius: 8px; margin-bottom: 16px; }
-        .section-title { font-weight: 500; margin-bottom: 12px; color: var(--primary-text-color); }
-        .form-group { margin-bottom: 12px; }
-        label { display: block; margin-bottom: 4px; font-size: 14px; color: var(--primary-text-color); }
-        input[type="text"], input[type="number"], select {
-          width: 100%; padding: 8px; border: 1px solid var(--divider-color);
-          border-radius: 4px; background: var(--card-background-color);
-          color: var(--primary-text-color); box-sizing: border-box;
-        }
-        input[type="checkbox"] { margin-right: 8px; }
-        .checkbox-label { display: flex; align-items: center; margin-bottom: 8px; cursor: pointer; }
-        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-        .info-box { background: var(--primary-color); color: white; padding: 12px; border-radius: 8px; margin-top: 16px; }
-        .info-title { font-weight: 500; margin-bottom: 8px; }
-        .info-content { font-size: 13px; line-height: 1.4; }
-      </style>
-      
-      <div class="editor">
-        <div class="section">
-          <div class="section-title">Basic Settings</div>
-          <div class="form-group">
-            <label>Card Title</label>
-            <input type="text" id="title" value="${this._config.title || 'YAWC Weather'}">
-          </div>
-          <div class="form-group">
-            <label>Update Interval (minutes)</label>
-            <input type="number" id="update_interval_min" value="${(this._config.update_interval || 300000) / 60000}" min="1" max="60">
-          </div>
-        </div>
-        
-        <div class="section">
-          <div class="section-title">Location Settings</div>
-          <div class="grid-2">
-            <div class="form-group">
-              <label>Latitude (optional)</label>
-              <input type="number" id="latitude" value="${this._config.latitude || ''}" placeholder="Auto" step="0.0001">
-            </div>
-            <div class="form-group">
-              <label>Longitude (optional)</label>
-              <input type="number" id="longitude" value="${this._config.longitude || ''}" placeholder="Auto" step="0.0001">
-            </div>
-          </div>
-        </div>
-        
-        <div class="section">
-          <div class="section-title">Display Options</div>
-          <label class="checkbox-label">
-            <input type="checkbox" id="show_radar" ${this._config.show_radar !== false ? 'checked' : ''}>
-            Show Windy Radar
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" id="show_alerts" ${this._config.show_alerts !== false ? 'checked' : ''}>
-            Show Weather Alerts
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" id="show_hourly" ${this._config.show_hourly !== false ? 'checked' : ''}>
-            Show Hourly Forecast
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" id="show_forecast" ${this._config.show_forecast !== false ? 'checked' : ''}>
-            Show Extended Forecast
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" id="show_branding" ${this._config.show_branding !== false ? 'checked' : ''}>
-            Show YAWC Branding
-          </label>
-        </div>
-        
-        <div class="section">
-          <div class="section-title">Section Headers</div>
-          <label class="checkbox-label">
-            <input type="checkbox" id="show_radar_header" ${this._config.show_radar_header !== false ? 'checked' : ''}>
-            Show "Windy.com Interactive Radar" Header
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" id="show_hourly_header" ${this._config.show_hourly_header !== false ? 'checked' : ''}>
-            Show "12-Hour Forecast" Header
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" id="show_forecast_header" ${this._config.show_forecast_header !== false ? 'checked' : ''}>
-            Show "X-Day Forecast" Header
-          </label>
-        </div>
-        
-        <div class="section">
-          <div class="section-title">Radar Settings</div>
-          <div class="form-group">
-            <label>Radar Zoom Level</label>
-            <input type="number" id="radar_zoom" value="${this._config.radar_zoom || 7}" min="5" max="10">
-          </div>
-          <div class="form-group">
-            <label>Radar Height (pixels)</label>
-            <input type="number" id="radar_height" value="${this._config.radar_height || 450}" min="300" max="600" step="50">
-          </div>
-        </div>
-        
-        <div class="section">
-          <div class="section-title">Forecast Settings</div>
-          <div class="form-group">
-            <label>Forecast Days</label>
-            <input type="number" id="forecast_days" value="${this._config.forecast_days || 5}" min="1" max="7">
-          </div>
-        </div>
-        
-        <div class="info-box">
-          <div class="info-title">🌟 YAWC v3.2 Features</div>
-          <div class="info-content">
-            ✓ Stable Windy.com radar that doesn't refresh<br>
-            ✓ Real-time NWS weather data<br>
-            ✓ Weather alerts with severity levels<br>
-            ✓ 12-hour hourly forecast with precipitation<br>
-            ✓ Extended daily forecast<br>
-            ✓ Interactive radar with multiple layers<br>
-            ✓ Auto-updates without refreshing radar<br>
-            ✓ Optional section headers for cleaner layout
-          </div>
-        </div>
-      </div>
-    `;
-    
-    this.attachListeners();
-  }
-
-  attachListeners() {
-    // Text and number inputs
-    const inputs = ['title', 'latitude', 'longitude', 'radar_zoom', 'radar_height', 'forecast_days'];
-    inputs.forEach(id => {
-      const input = this.shadowRoot.getElementById(id);
-      if (input) {
-        input.addEventListener('input', (e) => {
-          let value = e.target.value;
-          if (['latitude', 'longitude'].includes(id)) {
-            value = value ? parseFloat(value) : null;
-          } else if (['radar_zoom', 'radar_height', 'forecast_days'].includes(id)) {
-            value = parseInt(value) || (id === 'radar_zoom' ? 7 : id === 'radar_height' ? 450 : 5);
-          }
-          this.updateConfig(id, value);
-        });
-      }
-    });
-    
-    // Special handling for update interval
-    const updateIntervalInput = this.shadowRoot.getElementById('update_interval_min');
-    if (updateIntervalInput) {
-      updateIntervalInput.addEventListener('input', (e) => {
-        const minutes = parseInt(e.target.value) || 5;
-        this.updateConfig('update_interval', minutes * 60000);
-      });
-    }
-    
-    // Checkboxes - Updated to include the new header options
-    const checkboxes = ['show_radar', 'show_alerts', 'show_hourly', 'show_forecast', 'show_branding',
-                       'show_radar_header', 'show_hourly_header', 'show_forecast_header'];
-    checkboxes.forEach(id => {
-      const checkbox = this.shadowRoot.getElementById(id);
-      if (checkbox) {
-        checkbox.addEventListener('change', (e) => {
-          this.updateConfig(id, e.target.checked);
-        });
-      }
-    });
-  }
-
-  updateConfig(key, value) {
-    this._config = { ...this._config, [key]: value };
-    this.configChanged(this._config);
-  }
-}
-
-// Register the components
-customElements.define('yawc-card', YetAnotherWeatherCard);
-customElements.define('yawc-card-editor', YawcCardEditor);
-
-// Register with HACS
-window.customCards = window.customCards || [];
-window.customCards.push({
-  type: 'yawc-card',
-  name: 'YAWC - Yet Another Weather Card',
-  description: 'NWS weather card with stable Windy radar',
-  preview: false,
-  documentationURL: 'https://github.com/cnewman402/yawc'
-});
-
-console.log('YAWC v3.2 - Complete with Configuration Editor!');
