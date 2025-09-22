@@ -27,7 +27,7 @@ A comprehensive Home Assistant weather card featuring real-time NWS data, intera
 2. Go to "Frontend" 
 3. Click the menu (⋯) and select "Custom repositories"
 4. Add repository URL: `https://github.com/cnewman402/yawc`
-5. Category: "Lovelace"
+5. Category: "Dashboard"
 6. Install and restart Home Assistant
 
 ### Manual Installation
