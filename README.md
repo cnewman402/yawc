@@ -60,9 +60,9 @@ title: "My Weather"
 
 ### Full Configuration Options
 
-![Basic Settings](path-to-basic-settings-image.png)
-![Display Options](path-to-display-options-image.png)
-![Radar Settings](path-to-radar-settings-image.png)
+![Basic Settings](screenshots/basic.png)
+![Display Options](screenshots/display.png)
+![Radar Settings](screenshots/weather.png)
 
 ```yaml
 type: custom:yawc-card
