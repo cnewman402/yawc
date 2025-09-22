@@ -251,8 +251,13 @@ class YetAnotherWeatherCard extends HTMLElement {
     const f = this._weatherData.forecast;
     let temp = 'N/A', cond = 'Unknown';
     
+    // Handle temperature based on data source
     if (c?.temperature?.value) {
-      temp = Math.round(c.temperature.value * 9/5 + 32);
+      if (this._weatherData.source === 'openmeteo') {
+        temp = Math.round(c.temperature.value); // Open-Meteo already in Fahrenheit
+      } else {
+        temp = Math.round(c.temperature.value * 9/5 + 32); // NWS Celsius to Fahrenheit
+      }
     } else if (f?.[0]) {
       const m = f[0].temperature.toString().match(/\d+/);
       temp = m ? m[0] : 'N/A';
@@ -280,16 +285,21 @@ class YetAnotherWeatherCard extends HTMLElement {
       h += `<div class="det"><span>💧 Humidity</span><b>${Math.round(c.relativeHumidity.value)}%</b></div>`;
     }
     if (c?.windSpeed?.value) {
-      const ws = Math.round(c.windSpeed.value * 2.237);
+      let ws;
+      if (this._weatherData.source === 'openmeteo') {
+        ws = Math.round(c.windSpeed.value / 0.44704); // m/s to mph
+      } else {
+        ws = Math.round(c.windSpeed.value * 2.237); // NWS m/s to mph
+      }
       const wd = c.windDirection?.value ? this.getWindDir(c.windDirection.value) : '';
       h += `<div class="det"><span>💨 Wind</span><b>${ws} mph ${wd}</b></div>`;
     }
     if (c?.barometricPressure?.value) {
-      const p = Math.round(c.barometricPressure.value / 100);
+      const p = Math.round(c.barometricPressure.value / 100); // Pa to mb
       h += `<div class="det"><span>📊 Pressure</span><b>${p} mb</b></div>`;
     }
     if (c?.visibility?.value) {
-      const v = Math.round(c.visibility.value / 1609.34);
+      const v = Math.round(c.visibility.value / 1609.34); // meters to miles
       h += `<div class="det"><span>👁️ Visibility</span><b>${v} mi</b></div>`;
     }
     return h + '</div></div>';
@@ -301,7 +311,7 @@ class YetAnotherWeatherCard extends HTMLElement {
     const zoom = this._config.radar_zoom;
     const height = this._config.radar_height;
     
-    const windyUrl = `https://embed.windy.com/embed2.html?lat=${lat}&lon=${lon}&detailLat=${lat}&detailLon=${lon}&width=650&height=${height}&zoom=${zoom}&level=surface&overlay=radar&product=radar&menu=&message=&calendar=now&pressure=&type=map&location=coordinates&detail=&metricWind=mph&metricTemp=%C2%B0F&radarRange=-1`;
+    const windyUrl = `https://embed.windy.com/embed2.html?lat=${lat}&lon=${lon}&detailLat=${lat}&detailLon=${lon}&width=650&height=${height}&zoom=${zoom}&level=surface&overlay=radar&product=radar&menu=&message=&marker=true&calendar=now&pressure=&type=map&location=coordinates&detail=&metricWind=mph&metricTemp=%C2%B0F&radarRange=-1`;
     
     let h = '<div class="radar">';
     
@@ -381,8 +391,12 @@ class YetAnotherWeatherCard extends HTMLElement {
   }
 
   footer() {
+    const dataSource = this._weatherData?.source === 'nws' 
+      ? 'Data from National Weather Service' 
+      : 'Data from Open-Meteo & National Weather Services';
+      
     return `<div class="footer">
-      <div class="data-source">Data from National Weather Service</div>
+      <div class="data-source">${dataSource}</div>
       ${this._config.show_branding ? '<div class="branding">YAWC v3.2 - Yet Another Weather Card</div>' : ''}
     </div>`;
   }
