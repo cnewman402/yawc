@@ -18,6 +18,12 @@ class YetAnotherWeatherCard extends HTMLElement {
       show_hourly: config.show_hourly !== false,
       show_radar: config.show_radar !== false,
       show_branding: config.show_branding !== false,
+      
+      // NEW: Optional header configurations
+      show_radar_header: config.show_radar_header !== false,
+      show_hourly_header: config.show_hourly_header !== false,
+      show_forecast_header: config.show_forecast_header !== false,
+      
       forecast_days: config.forecast_days || 5,
       radar_zoom: config.radar_zoom || 7,
       radar_height: config.radar_height || 450,
@@ -265,9 +271,14 @@ class YetAnotherWeatherCard extends HTMLElement {
     
     const windyUrl = `https://embed.windy.com/embed2.html?lat=${lat}&lon=${lon}&detailLat=${lat}&detailLon=${lon}&width=650&height=${height}&zoom=${zoom}&level=surface&overlay=radar&product=radar&menu=&message=&marker=true&calendar=now&pressure=&type=map&location=coordinates&detail=&metricWind=mph&metricTemp=%C2%B0F&radarRange=-1`;
     
-    return `<div class="radar">
-      <div class="sec-hdr">Windy.com Interactive Radar</div>
-      <div class="radar-container">
+    let h = '<div class="radar">';
+    
+    // Only show header if configured to do so
+    if (this._config.show_radar_header) {
+      h += '<div class="sec-hdr">Windy.com Interactive Radar</div>';
+    }
+    
+    h += `<div class="radar-container">
         <iframe 
           class="windy-iframe"
           width="100%" 
@@ -282,11 +293,22 @@ class YetAnotherWeatherCard extends HTMLElement {
         <span class="radar-tip">• Click and drag to pan • Scroll to zoom • Use controls for layers</span>
       </div>
     </div>`;
+    
+    return h;
   }
 
   hourly() {
     if (!this._weatherData.hourly?.length) return '';
-    let h = '<div class="hourly"><div class="sec-hdr">12-Hour Forecast</div><div class="h-scroll">';
+    
+    let h = '<div class="hourly">';
+    
+    // Only show header if configured to do so
+    if (this._config.show_hourly_header) {
+      h += '<div class="sec-hdr">12-Hour Forecast</div>';
+    }
+    
+    h += '<div class="h-scroll">';
+    
     for (const hr of this._weatherData.hourly.slice(0, 12)) {
       const t = new Date(hr.startTime).toLocaleTimeString([], {hour: 'numeric'});
       const icon = this.getIcon(hr.shortForecast);
@@ -304,7 +326,14 @@ class YetAnotherWeatherCard extends HTMLElement {
 
   forecast() {
     if (!this._weatherData.forecast?.length) return '';
-    let h = `<div class="forecast"><div class="sec-hdr">${this._config.forecast_days}-Day Forecast</div>`;
+    
+    let h = '<div class="forecast">';
+    
+    // Only show header if configured to do so
+    if (this._config.show_forecast_header) {
+      h += `<div class="sec-hdr">${this._config.forecast_days}-Day Forecast</div>`;
+    }
+    
     const max = Math.min(this._config.forecast_days * 2, this._weatherData.forecast.length);
     for (let i = 0; i < max; i++) {
       const p = this._weatherData.forecast[i];
@@ -516,6 +545,22 @@ class YawcCardEditor extends HTMLElement {
         </div>
         
         <div class="section">
+          <div class="section-title">Section Headers</div>
+          <label class="checkbox-label">
+            <input type="checkbox" id="show_radar_header" ${this._config.show_radar_header !== false ? 'checked' : ''}>
+            Show "Windy.com Interactive Radar" Header
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="show_hourly_header" ${this._config.show_hourly_header !== false ? 'checked' : ''}>
+            Show "12-Hour Forecast" Header
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="show_forecast_header" ${this._config.show_forecast_header !== false ? 'checked' : ''}>
+            Show "X-Day Forecast" Header
+          </label>
+        </div>
+        
+        <div class="section">
           <div class="section-title">Radar Settings</div>
           <div class="form-group">
             <label>Radar Zoom Level</label>
@@ -544,7 +589,8 @@ class YawcCardEditor extends HTMLElement {
             ✓ 12-hour hourly forecast with precipitation<br>
             ✓ Extended daily forecast<br>
             ✓ Interactive radar with multiple layers<br>
-            ✓ Auto-updates without refreshing radar
+            ✓ Auto-updates without refreshing radar<br>
+            ✓ Optional section headers for cleaner layout
           </div>
         </div>
       </div>
@@ -580,8 +626,9 @@ class YawcCardEditor extends HTMLElement {
       });
     }
     
-    // Checkboxes
-    const checkboxes = ['show_radar', 'show_alerts', 'show_hourly', 'show_forecast', 'show_branding'];
+    // Checkboxes - Updated to include the new header options
+    const checkboxes = ['show_radar', 'show_alerts', 'show_hourly', 'show_forecast', 'show_branding',
+                       'show_radar_header', 'show_hourly_header', 'show_forecast_header'];
     checkboxes.forEach(id => {
       const checkbox = this.shadowRoot.getElementById(id);
       if (checkbox) {
