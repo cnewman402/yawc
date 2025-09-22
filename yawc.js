@@ -159,7 +159,8 @@ class YetAnotherWeatherCard extends HTMLElement {
   }
 
   async fetchOpenMeteoData(lat, lon) {
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m,weather_code,visibility,pressure_msl&hourly=temperature_2m,precipitation_probability,weather_code&daily=temperature_2m_max,temperature_2m_min,weather_code,precipitation_probability_max&timezone=auto&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch`;
+    // Use metric units for international locations
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m,weather_code,visibility,pressure_msl&hourly=temperature_2m,precipitation_probability,weather_code&daily=temperature_2m_max,temperature_2m_min,weather_code,precipitation_probability_max&timezone=auto&temperature_unit=celsius&wind_speed_unit=kmh&precipitation_unit=mm`;
     
     const response = await fetch(url);
     if (!response.ok) throw new Error('Failed to get weather data');
@@ -181,12 +182,12 @@ class YetAnotherWeatherCard extends HTMLElement {
     if (!current) return null;
     
     return {
-      temperature: { value: current.temperature_2m },
+      temperature: { value: current.temperature_2m }, // Already in Celsius from API
       relativeHumidity: { value: current.relative_humidity_2m },
-      windSpeed: { value: current.wind_speed_10m * 0.44704 }, // mph to m/s
+      windSpeed: { value: current.wind_speed_10m }, // km/h from API
       windDirection: { value: current.wind_direction_10m },
       barometricPressure: { value: current.pressure_msl * 100 }, // hPa to Pa
-      visibility: { value: current.visibility ? current.visibility * 1000 : null }, // km to m
+      visibility: { value: current.visibility }, // km from API
       textDescription: this.getWeatherDescription(current.weather_code)
     };
   }
@@ -384,7 +385,7 @@ class YetAnotherWeatherCard extends HTMLElement {
     // Handle temperature based on data source
     if (c?.temperature?.value) {
       if (this._weatherData.source === 'openmeteo') {
-        temp = Math.round(c.temperature.value); // Open-Meteo already in Fahrenheit
+        temp = Math.round(c.temperature.value); // Open-Meteo in Celsius
       } else {
         temp = Math.round(c.temperature.value * 9/5 + 32); // NWS Celsius to Fahrenheit
       }
@@ -400,10 +401,13 @@ class YetAnotherWeatherCard extends HTMLElement {
     const now = new Date();
     const timeStr = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
+    // Temperature unit based on source
+    const tempUnit = this._weatherData.source === 'openmeteo' ? '°C' : '°F';
+
     let h = `<div class="current">
       <div class="main">
         <div class="temp-block">
-          <div class="temp">${temp}°</div>
+          <div class="temp">${temp}${tempUnit}</div>
           <div class="icon">${this.getIcon(cond)}</div>
         </div>
         <div class="cond">${cond}</div>
@@ -415,22 +419,32 @@ class YetAnotherWeatherCard extends HTMLElement {
       h += `<div class="det"><span>💧 Humidity</span><b>${Math.round(c.relativeHumidity.value)}%</b></div>`;
     }
     if (c?.windSpeed?.value) {
-      let ws;
+      let ws, windUnit;
       if (this._weatherData.source === 'openmeteo') {
-        ws = Math.round(c.windSpeed.value / 0.44704); // m/s to mph
+        ws = Math.round(c.windSpeed.value); // km/h
+        windUnit = 'km/h';
       } else {
         ws = Math.round(c.windSpeed.value * 2.237); // NWS m/s to mph
+        windUnit = 'mph';
       }
       const wd = c.windDirection?.value ? this.getWindDir(c.windDirection.value) : '';
-      h += `<div class="det"><span>💨 Wind</span><b>${ws} mph ${wd}</b></div>`;
+      h += `<div class="det"><span>💨 Wind</span><b>${ws} ${windUnit} ${wd}</b></div>`;
     }
     if (c?.barometricPressure?.value) {
-      const p = Math.round(c.barometricPressure.value / 100); // Pa to mb
-      h += `<div class="det"><span>📊 Pressure</span><b>${p} mb</b></div>`;
+      const p = Math.round(c.barometricPressure.value / 100); // Pa to mb/hPa
+      const pressureUnit = this._weatherData.source === 'openmeteo' ? 'hPa' : 'mb';
+      h += `<div class="det"><span>📊 Pressure</span><b>${p} ${pressureUnit}</b></div>`;
     }
-    if (c?.visibility?.value) {
-      const v = Math.round(c.visibility.value / 1609.34); // meters to miles
-      h += `<div class="det"><span>👁️ Visibility</span><b>${v} mi</b></div>`;
+    if (c?.visibility?.value && c.visibility.value > 0) {
+      let v, visUnit;
+      if (this._weatherData.source === 'openmeteo') {
+        v = Math.round(c.visibility.value); // km
+        visUnit = 'km';
+      } else {
+        v = Math.round(c.visibility.value / 1609.34); // meters to miles
+        visUnit = 'mi';
+      }
+      h += `<div class="det"><span>👁️ Visibility</span><b>${v} ${visUnit}</b></div>`;
     }
     return h + '</div></div>';
   }
