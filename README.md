@@ -1,6 +1,6 @@
 # YAWC - Yet Another Weather Card
 
-A comprehensive Home Assistant weather card featuring real-time NWS data, interactive Windy radar, live clock, and customizable display options.
+A comprehensive Home Assistant weather card featuring global weather data, interactive Windy radar, live clock, and customizable display options.
 
 ## Preview
 
@@ -10,15 +10,25 @@ A comprehensive Home Assistant weather card featuring real-time NWS data, intera
 
 ## ✨ Key Features
 
-- **Real-time NWS Weather Data** - Accurate forecasts from the National Weather Service
+- **Global Weather Coverage** - NWS data for US locations, Open-Meteo for worldwide coverage
+- **Smart Unit System** - Imperial units (°F, mph, miles) for US, Metric units (°C, km/h, km) internationally
 - **Interactive Windy Radar** - Pan, zoom, and explore weather layers without page refreshes  
 - **Live Clock** - Updates every second for current time display
-- **Weather Alerts** - Color-coded severity levels (Severe/Moderate/Minor)
+- **Weather Alerts** - Color-coded severity levels for US locations (Severe/Moderate/Minor)
 - **Hourly Forecast** - 12-hour outlook with precipitation chances
 - **5-Day Extended Forecast** - Daily weather patterns
 - **Customizable Headers** - Show/hide section titles for cleaner layouts
 - **Auto-refresh** - Configurable update intervals (default 5 minutes)
 - **Responsive Design** - Mobile and desktop optimized
+- **No API Keys Required** - Works immediately without external service registration
+
+## 🌍 Global Coverage
+
+YAWC automatically detects your location and uses the best weather data source:
+
+- **🇺🇸 United States & Territories**: Full NWS experience with weather alerts, Imperial units
+- **🌍 International Locations**: Comprehensive Open-Meteo data with Metric units
+- **🔄 Seamless Transition**: No configuration needed - it just works anywhere
 
 ## 🚀 Installation
 
@@ -27,7 +37,7 @@ A comprehensive Home Assistant weather card featuring real-time NWS data, intera
 2. Go to "Frontend" 
 3. Click the menu (⋯) and select "Custom repositories"
 4. Add repository URL: `https://github.com/cnewman402/yawc`
-5. Category: "Dashboard"
+5. Category: "Lovelace"
 6. Install and restart Home Assistant
 
 ### Manual Installation
@@ -58,7 +68,7 @@ title: "My Weather"
 type: custom:yawc-card
 
 # Basic Settings
-title: "My Clean Weather"
+title: "My Weather Station"
 update_interval: 300000  # 5 minutes (in milliseconds)
 
 # Location (Optional - uses Home Assistant location by default)
@@ -101,7 +111,7 @@ forecast_days: 5              # Number of forecast days (1-7)
 
 ### Display Options  
 - **Show Windy Radar**: Interactive weather radar with multiple layers
-- **Show Weather Alerts**: NWS alerts with color-coded severity
+- **Show Weather Alerts**: NWS alerts with color-coded severity (US only)
 - **Show Hourly Forecast**: 12-hour detailed forecast
 - **Show Extended Forecast**: Multi-day weather outlook
 - **Show YAWC Branding**: Display version info in footer
@@ -121,27 +131,45 @@ Customize which section headers are displayed for a cleaner look:
 
 ## 🌦️ Weather Data Sources
 
+### United States
 - **Current Conditions**: National Weather Service observation stations
-- **Forecasts**: NWS forecast grids
+- **Forecasts**: NWS forecast grids  
 - **Weather Alerts**: NWS active alerts by location
-- **Radar**: Windy.com interactive weather radar
+- **Units**: Imperial (°F, mph, miles, mb)
+
+### International
+- **Weather Data**: Open-Meteo (aggregates national weather services worldwide)
+- **Forecasts**: High-resolution local and global weather models
+- **Units**: Metric (°C, km/h, km, hPa)
+- **Coverage**: Global with high accuracy
+
+### Radar
+- **Source**: Windy.com interactive weather radar
+- **Features**: Multiple layers, pan/zoom, real-time updates
 
 ## 🔧 Troubleshooting
 
 ### Weather Data Not Loading
 - Verify your Home Assistant location is set in Settings → System → General
-- Check that your location is within NWS coverage area (US territories)
-- Review Home Assistant logs for API errors
+- Check browser console (F12) for error messages
+- For US locations: Ensure coordinates are within NWS coverage area
+- For international: Open-Meteo should work globally
 
 ### Radar Not Displaying  
 - Check your internet connection
 - Ensure iframe loading is not blocked by browser/network
 - Try adjusting radar height setting
+- Clear browser cache and hard refresh (Ctrl+Shift+R)
 
 ### Card Not Updating
 - Verify update_interval is set correctly (in milliseconds)
 - Check Home Assistant resource configuration
-- Clear browser cache and hard refresh (Ctrl+Shift+R)
+- Look for console errors indicating API issues
+
+### Units Not Displaying Correctly
+- US locations should show Imperial units (°F, mph)
+- International locations should show Metric units (°C, km/h)
+- Check browser console to see which data source is being used
 
 ## 🎨 Customization
 
@@ -158,6 +186,7 @@ YAWC is fully responsive and optimized for mobile devices:
 - Stacked layout on narrow screens
 - Touch-friendly radar controls
 - Readable font sizes on all devices
+- Swipeable hourly forecast
 
 ## 🤝 Contributing
 
@@ -175,4 +204,4 @@ This project is licensed under the MIT License.
 
 ---
 
-**YAWC v3.2** - Built with ❤️ for the Home Assistant community
+**YAWC v3.2** - Built with ❤️ for the global Home Assistant community
