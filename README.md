@@ -1,306 +1,178 @@
 # YAWC - Yet Another Weather Card
 
-[![GitHub Release][releases-shield]][releases]
-[![License][license-shield]](LICENSE)
-[![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge)](https://github.com/custom-components/hacs)
+A comprehensive Home Assistant weather card featuring real-time NWS data, interactive Windy radar, live clock, and customizable display options.
 
-A comprehensive weather card for Home Assistant featuring enhanced NWS (National Weather Service) integration with animated radar, storm tracking, and lightning detection.
+## Preview
 
-![YAWC Preview](https://via.placeholder.com/600x400/2c2c2c/ffffff?text=YAWC+Weather+Card+Preview)
+![YAWC Weather Card](path-to-your-overall-look-image.png)
 
-## ✨ Features
+*Clean, modern weather display with live updating time, current conditions, interactive radar, hourly forecast, and extended forecast*
 
-### 🌦️ **Complete Weather Information**
-- **Current Conditions**: Temperature, humidity, wind, pressure, feels-like temperature
-- **Hourly Forecast**: Next 12 hours with temperatures and precipitation probability
-- **Extended Forecast**: 7-day detailed weather outlook
-- **Weather Alerts**: Real-time severe weather warnings and watches
+## ✨ Key Features
 
-### 📡 **Advanced Radar System**
-- **Animated Radar Loop**: 10-frame animation showing storm movement
-- **Multiple Radar Types**: Base reflectivity, velocity, storm motion, precipitation, long-range
-- **Zoom Levels**: Local, regional, and national radar views
-- **Interactive Controls**: Play/pause, frame scrubbing, refresh
-
-### ⛈️ **Storm Intelligence**
-- **Storm Cell Tracking**: Visual indicators for severe weather systems
-- **Lightning Detection**: Real-time lightning strike visualization
-- **Severe Weather Alerts**: Prominent alerts with pulsing animations
-- **Geographic Overlays**: Counties, highways, and reference points
-
-### 🎛️ **Customization Options**
-- **Flexible Display**: Show/hide any section (alerts, forecast, radar, etc.)
-- **Configurable Updates**: Adjustable refresh intervals
-- **Responsive Design**: Works on desktop, tablet, and mobile
-- **Theme Integration**: Matches Home Assistant's design system
+- **Real-time NWS Weather Data** - Accurate forecasts from the National Weather Service
+- **Interactive Windy Radar** - Pan, zoom, and explore weather layers without page refreshes  
+- **Live Clock** - Updates every second for current time display
+- **Weather Alerts** - Color-coded severity levels (Severe/Moderate/Minor)
+- **Hourly Forecast** - 12-hour outlook with precipitation chances
+- **5-Day Extended Forecast** - Daily weather patterns
+- **Customizable Headers** - Show/hide section titles for cleaner layouts
+- **Auto-refresh** - Configurable update intervals (default 5 minutes)
+- **Responsive Design** - Mobile and desktop optimized
 
 ## 🚀 Installation
 
 ### HACS (Recommended)
-
-1. Open HACS in your Home Assistant instance
-2. Click on "Frontend" 
-3. Click the menu (three dots) in the top right
-4. Select "Custom repositories"
-5. Add this repository URL: `https://github.com/yourusername/yawc`
-6. Select category "Lovelace"
-7. Click "Install"
-8. Add the resource to your `configuration.yaml`:
-
-```yaml
-lovelace:
-  resources:
-    - url: /hacsfiles/yawc/yawc.js
-      type: module
-```
+1. Open HACS in Home Assistant
+2. Go to "Frontend" 
+3. Click the menu (⋯) and select "Custom repositories"
+4. Add repository URL: `https://github.com/cnewman402/yawc`
+5. Category: "Lovelace"
+6. Install and restart Home Assistant
 
 ### Manual Installation
-
-1. Download `yawc.js` from the latest release
-2. Copy it to your `www` folder in your Home Assistant config directory
-3. Add the resource to your `configuration.yaml`:
-
+1. Download `yawc.js` from this repository
+2. Copy to `/config/www/yawc/yawc.js`
+3. Add to your Lovelace resources:
 ```yaml
-lovelace:
-  resources:
-    - url: /local/yawc.js
-      type: module
+resources:
+  - url: /local/yawc/yawc.js
+    type: module
 ```
-
-4. Restart Home Assistant
 
 ## ⚙️ Configuration
 
-### Basic Configuration
-
+### Basic Usage
 ```yaml
 type: custom:yawc-card
 title: "My Weather"
-latitude: 40.7128
-longitude: -74.0060
 ```
 
-### Full Configuration
+### Full Configuration Options
+
+![Basic Settings](path-to-basic-settings-image.png)
+![Display Options](path-to-display-options-image.png)
+![Radar Settings](path-to-radar-settings-image.png)
 
 ```yaml
 type: custom:yawc-card
-title: "Enhanced Weather"
+
+# Basic Settings
+title: "My Clean Weather"
+update_interval: 300000  # 5 minutes (in milliseconds)
+
+# Location (Optional - uses Home Assistant location by default)
 latitude: 40.7128
 longitude: -74.0060
 
 # Display Options
-show_alerts: true
-show_forecast: true
-show_hourly: true
 show_radar: true
-show_storm_tracking: true
-show_lightning: true
+show_alerts: true
+show_hourly: true
+show_forecast: true
 show_branding: true
 
+# Optional Section Headers (all default to true)
+show_radar_header: false      # Hide "Windy.com Interactive Radar" header
+show_hourly_header: false     # Hide "12-Hour Forecast" header  
+show_forecast_header: true    # Keep "5-Day Forecast" header
+
+# Radar Configuration
+radar_zoom: 7                 # Zoom level (5-10)
+radar_height: 400             # Height in pixels (300-600)
+
 # Forecast Settings
-forecast_days: 7
-
-# Radar Settings
-radar_height: 500
-animation_frames: 10
-animation_speed: 500
-
-# Update Settings
-update_interval: 300000  # 5 minutes in milliseconds
+forecast_days: 5              # Number of forecast days (1-7)
 ```
 
-## 📋 Configuration Options
+## 📍 Location Setup
 
-| Name | Type | Default | Description |
-|------|------|---------|-------------|
-| `title` | string | `YAWC Weather` | Card title |
-| `latitude` | number | **Required** | Your latitude |
-| `longitude` | number | **Required** | Your longitude |
-| `show_alerts` | boolean | `true` | Show weather alerts |
-| `show_forecast` | boolean | `true` | Show extended forecast |
-| `show_hourly` | boolean | `true` | Show hourly forecast |
-| `show_radar` | boolean | `true` | Show radar section |
-| `show_storm_tracking` | boolean | `true` | Show storm cell overlays |
-| `show_lightning` | boolean | `true` | Show lightning strikes |
-| `show_branding` | boolean | `true` | Show YAWC branding |
-| `forecast_days` | number | `5` | Number of forecast days (1-7) |
-| `radar_height` | number | `500` | Radar display height in pixels |
-| `update_interval` | number | `300000` | Update frequency in milliseconds |
-| `animation_frames` | number | `10` | Number of radar animation frames |
-| `animation_speed` | number | `500` | Animation speed in milliseconds |
+**Automatic Location**: YAWC automatically uses your Home Assistant's configured location (latitude/longitude from Settings → System → General).
 
-## 🎯 Radar Features
+**Manual Override**: Optionally specify custom coordinates in the card configuration for different locations.
 
-### Radar Types
-- **Base Reflectivity**: Standard precipitation radar showing rain/snow intensity
-- **Base Velocity**: Wind patterns and storm rotation detection  
-- **Storm Relative Motion**: Storm movement and development tracking
-- **Precipitation**: Rainfall rate estimates and accumulation
-- **Long Range**: Extended coverage area view
+![Location Settings](path-to-location-settings-image.png)
 
-### Zoom Levels
-- **Local**: High-resolution view of immediate area (~50 mile radius)
-- **Regional**: Broader coverage of surrounding states (~200 mile radius)  
-- **National**: Continental US overview for weather pattern context
+## 🎛️ Configuration Options
 
-### Overlays
-- **Storm Cells**: Red pulsing indicators showing severe weather locations
-- **Lightning**: Yellow flashing dots for recent lightning activity
-- **Counties**: Geographic boundary reference lines
-- **Highways**: Major road overlays for navigation context
+### Basic Settings
+- **Card Title**: Custom name for your weather card
+- **Update Interval**: How often to refresh weather data (1-60 minutes)
 
-## 🌟 Advanced Features
+### Display Options  
+- **Show Windy Radar**: Interactive weather radar with multiple layers
+- **Show Weather Alerts**: NWS alerts with color-coded severity
+- **Show Hourly Forecast**: 12-hour detailed forecast
+- **Show Extended Forecast**: Multi-day weather outlook
+- **Show YAWC Branding**: Display version info in footer
 
-### Storm Intelligence
-YAWC automatically detects and highlights severe weather:
-- Storm cells are shown as animated red circles with intensity indicators
-- Lightning strikes appear as flashing yellow dots
-- Severe weather triggers prominent alert banners
-- Real-time storm movement tracking
+### Section Headers
+Customize which section headers are displayed for a cleaner look:
+- **Radar Header**: "Windy.com Interactive Radar" 
+- **Hourly Header**: "12-Hour Forecast"
+- **Forecast Header**: "X-Day Forecast"
 
-### Animation System
-- **10-frame loop** showing the last 50 minutes of radar data
-- **Play/pause controls** with smooth animation
-- **Frame scrubbing** to examine specific time periods
-- **Automatic updates** every 5 minutes
+### Radar Settings
+- **Zoom Level**: Map zoom from 5 (wide view) to 10 (close view)
+- **Radar Height**: Display height in pixels (300-600px)
 
-### Alert Integration
-- Integrates with NWS alert system
-- Color-coded severity levels
-- Animated alerts for severe weather
-- Detailed alert descriptions and instructions
+### Forecast Settings  
+- **Forecast Days**: Number of days to show (1-7)
+
+## 🌦️ Weather Data Sources
+
+- **Current Conditions**: National Weather Service observation stations
+- **Forecasts**: NWS forecast grids
+- **Weather Alerts**: NWS active alerts by location
+- **Radar**: Windy.com interactive weather radar
 
 ## 🔧 Troubleshooting
 
-### Common Issues
+### Weather Data Not Loading
+- Verify your Home Assistant location is set in Settings → System → General
+- Check that your location is within NWS coverage area (US territories)
+- Review Home Assistant logs for API errors
 
-**Card not loading:**
-- Verify the resource is added to your configuration
-- Check browser console for JavaScript errors
-- Ensure latitude/longitude are valid numbers
+### Radar Not Displaying  
+- Check your internet connection
+- Ensure iframe loading is not blocked by browser/network
+- Try adjusting radar height setting
 
-**No radar data:**
-- Check internet connectivity
-- Verify coordinates are within US/territories
-- Some radar stations may have temporary outages
+### Card Not Updating
+- Verify update_interval is set correctly (in milliseconds)
+- Check Home Assistant resource configuration
+- Clear browser cache and hard refresh (Ctrl+Shift+R)
 
-**Slow performance:**
-- Reduce `animation_frames` (try 5-6 instead of 10)
-- Increase `update_interval` to reduce API calls
-- Lower `radar_height` for better mobile performance
+## 🎨 Customization
 
-### Location Requirements
-- YAWC uses NWS APIs which cover:
-  - Continental United States
-  - Alaska and Hawaii  
-  - US Territories (Puerto Rico, Guam, etc.)
-- International locations are not supported
+The card automatically adapts to your Home Assistant theme variables:
+- `--card-background-color`
+- `--primary-text-color` 
+- `--secondary-text-color`
+- `--divider-color`
+- `--secondary-background-color`
 
-## 🛠️ Development
+## 📱 Mobile Support
 
-### Local Development Setup
+YAWC is fully responsive and optimized for mobile devices:
+- Stacked layout on narrow screens
+- Touch-friendly radar controls
+- Readable font sizes on all devices
 
-```bash
-# Clone the repository
-git clone https://github.com/yourusername/yawc.git
-cd yawc
+## 🤝 Contributing
 
-# Install dependencies (if any)
-npm install
+Issues and pull requests welcome! Please check existing issues before submitting new ones.
 
-# Link to Home Assistant for testing
-ln -s $(pwd)/yawc.js /path/to/homeassistant/www/
-```
+## 📄 License
 
-### Building
+This project is licensed under the MIT License.
 
-No build process required - YAWC is a single JavaScript file using native ES modules.
+## 🙋‍♂️ Support
 
-### Contributing
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b my-new-feature`
-3. Make your changes and test thoroughly
-4. Commit your changes: `git commit -am 'Add some feature'`
-5. Push to the branch: `git push origin my-new-feature`
-6. Submit a pull request
-
-## 📊 API Usage
-
-YAWC responsibly uses the following NWS APIs:
-- **Points API**: Location and grid information
-- **Observations API**: Current weather conditions
-- **Forecast API**: Extended weather forecasts
-- **Alerts API**: Weather warnings and watches
-- **Radar API**: NEXRAD radar imagery
-
-All APIs are public and free. YAWC implements appropriate caching and rate limiting.
-
-## 🔒 Privacy
-
-YAWC:
-- Only uses your provided coordinates to fetch weather data
-- Makes direct API calls to NWS (no third-party services)
-- Does not store or transmit personal information
-- Operates entirely within your Home Assistant instance
-
-## 📱 Browser Compatibility
-
-YAWC works with modern browsers supporting:
-- ES6 modules
-- CSS Grid and Flexbox
-- Fetch API
-- Web Components (Lit Element)
-
-**Supported Browsers:**
-- Chrome 61+
-- Firefox 60+
-- Safari 12+
-- Edge 79+
-
-## 🆘 Support
-
-### Getting Help
-- Check the [Issues](https://github.com/yourusername/yawc/issues) page
-- Search existing issues before creating new ones
-- Provide your configuration and any error messages
-- Include Home Assistant and browser versions
-
-### Feature Requests
-We welcome feature requests! Please:
-- Check if the feature already exists
-- Explain your use case clearly
-- Consider contributing if you have development skills
-
-## 📄 Changelog
-
-### Version 1.0.0
-- Initial release
-- Full NWS API integration
-- Animated radar with multiple types
-- Storm tracking and lightning detection
-- Responsive design
-- HACS compatibility
-
-## 📜 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- **National Weather Service** for providing excellent free APIs
-- **Home Assistant Community** for inspiration and feedback
-- **Lit Element** for the web component framework
-- **HACS** for making custom component distribution easy
-
-## 🏷️ Keywords
-
-weather, radar, nws, national weather service, home assistant, lovelace, card, lightning, storms, forecast, animated radar, severe weather
+- **Issues**: Report bugs via GitHub Issues
+- **Discussions**: Ask questions in GitHub Discussions
+- **Home Assistant Community**: [YAWC Thread](link-to-community-thread)
 
 ---
 
-**Made with ❤️ for the Home Assistant community**
-
-[releases-shield]: https://img.shields.io/github/release/yourusername/yawc.svg?style=for-the-badge
-[releases]: https://github.com/yourusername/yawc/releases
-[license-shield]: https://img.shields.io/github/license/yourusername/yawc.svg?style=for-the-badge
+**YAWC v3.2** - Built with ❤️ for the Home Assistant community
