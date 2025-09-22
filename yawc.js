@@ -187,7 +187,7 @@ class YetAnotherWeatherCard extends HTMLElement {
       windSpeed: { value: current.wind_speed_10m }, // km/h from API
       windDirection: { value: current.wind_direction_10m },
       barometricPressure: { value: current.pressure_msl * 100 }, // hPa to Pa
-      visibility: { value: current.visibility }, // km from API
+      visibility: { value: current.visibility ? current.visibility / 1000 : null }, // meters to km
       textDescription: this.getWeatherDescription(current.weather_code)
     };
   }
