@@ -1,3 +1,5 @@
+console.log('YAWC v2.2.0 - Fresh Implementation with Fixed Radar');
+
 class YetAnotherWeatherCard extends HTMLElement {
   constructor() {
     super();
@@ -5,11 +7,13 @@ class YetAnotherWeatherCard extends HTMLElement {
     this._config = {};
     this._weatherData = null;
     this._updateInterval = null;
-    this._hasRenderedRadar = false;
   }
 
   setConfig(config) {
-    if (!config) throw new Error('Invalid configuration');
+    if (!config) {
+      throw new Error('Invalid configuration');
+    }
+    
     this._config = {
       title: config.title || 'YAWC Weather',
       update_interval: config.update_interval || 300000,
@@ -18,9 +22,14 @@ class YetAnotherWeatherCard extends HTMLElement {
       show_hourly: config.show_hourly !== false,
       show_radar: config.show_radar !== false,
       show_branding: config.show_branding !== false,
+      
+      // NEW: Optional header configurations
+      show_radar_header: config.show_radar_header !== false,
+      show_hourly_header: config.show_hourly_header !== false,
+      show_forecast_header: config.show_forecast_header !== false,
+      
       forecast_days: config.forecast_days || 5,
-      radar_zoom: config.radar_zoom || 7,
-      radar_height: config.radar_height || 450,
+      radar_height: config.radar_height || 400,
       latitude: config.latitude || null,
       longitude: config.longitude || null
     };
@@ -28,24 +37,27 @@ class YetAnotherWeatherCard extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
-    if (!this._weatherData) this.fetchWeatherData();
-    else this.updateWeatherOnly();
+    if (!this._weatherData) {
+      this.fetchWeatherData();
+    }
+    this.render();
     this.startUpdateInterval();
   }
 
-  connectedCallback() { 
+  connectedCallback() {
     this.startUpdateInterval();
-    this._hasRenderedRadar = false;
   }
-  
-  disconnectedCallback() { 
+
+  disconnectedCallback() {
     this.stopUpdateInterval();
-    this._hasRenderedRadar = false;
   }
 
   startUpdateInterval() {
     this.stopUpdateInterval();
-    this._updateInterval = setInterval(() => this.fetchWeatherData(true), this._config.update_interval);
+    var self = this;
+    this._updateInterval = setInterval(function() {
+      self.fetchWeatherData();
+    }, this._config.update_interval);
   }
 
   stopUpdateInterval() {
@@ -55,374 +67,512 @@ class YetAnotherWeatherCard extends HTMLElement {
     }
   }
 
-  async fetchWeatherData(isUpdate = false) {
+  fetchWeatherData() {
     if (!this._hass) return;
-    const lat = this._config.latitude || this._hass.config.latitude;
-    const lon = this._config.longitude || this._hass.config.longitude;
-    if (!lat || !lon) {
+
+    var self = this;
+    var latitude = this._config.latitude || this._hass.config.latitude;
+    var longitude = this._config.longitude || this._hass.config.longitude;
+
+    if (!latitude || !longitude) {
       this._weatherData = { error: 'No coordinates available' };
       this.render();
       return;
     }
 
-    try {
-      const pointResp = await fetch(`https://api.weather.gov/points/${lat},${lon}`);
-      if (!pointResp.ok) throw new Error('Failed to get NWS data');
-      const point = await pointResp.json();
-      const props = point.properties;
-      
-      const [forecast, hourly, alerts, current] = await Promise.all([
-        fetch(props.forecast).then(r => r.json()),
-        fetch(props.forecastHourly).then(r => r.json()).catch(() => null),
-        fetch(`https://api.weather.gov/alerts/active?point=${lat},${lon}`).then(r => r.json()).catch(() => null),
-        this.getCurrentObs(props.observationStations)
-      ]);
+    var pointUrl = 'https://api.weather.gov/points/' + latitude + ',' + longitude;
+    
+    fetch(pointUrl)
+      .then(function(response) {
+        if (!response.ok) throw new Error('Failed to get NWS point data');
+        return response.json();
+      })
+      .then(function(pointData) {
+        var forecastUrl = pointData.properties.forecast;
+        var forecastHourlyUrl = pointData.properties.forecastHourly;
+        var observationStations = pointData.properties.observationStations;
 
-      this._weatherData = {
-        current: current,
-        forecast: forecast.properties.periods,
-        hourly: hourly ? hourly.properties.periods : [],
-        alerts: alerts ? alerts.features : [],
-        coords: { lat, lon },
-        radarStation: props.radarStation,
-        lastUpdated: new Date()
-      };
-      
-      if (isUpdate) {
-        this.updateWeatherOnly();
-      } else {
-        this.render();
-      }
-    } catch (error) {
-      console.error('Weather fetch error:', error);
-      this._weatherData = { error: error.message, lastUpdated: new Date() };
-      this.render();
-    }
+        return Promise.all([
+          fetch(forecastUrl).then(function(r) { return r.json(); }),
+          fetch(forecastHourlyUrl).then(function(r) { return r.json(); }).catch(function() { return null; }),
+          fetch('https://api.weather.gov/alerts/active?point=' + latitude + ',' + longitude).then(function(r) { return r.json(); }).catch(function() { return null; }),
+          self.getCurrentObservations(observationStations)
+        ]);
+      })
+      .then(function(results) {
+        var forecastData = results[0];
+        var hourlyData = results[1];
+        var alertsData = results[2];
+        var currentData = results[3];
+
+        self._weatherData = {
+          current: currentData,
+          forecast: forecastData.properties.periods,
+          hourly: hourlyData ? hourlyData.properties.periods : [],
+          alerts: alertsData ? alertsData.features : [],
+          coordinates: { latitude: latitude, longitude: longitude },
+          lastUpdated: new Date()
+        };
+
+        self.render();
+      })
+      .catch(function(error) {
+        console.error('Error fetching NWS weather data:', error);
+        self._weatherData = { 
+          error: error.message,
+          lastUpdated: new Date()
+        };
+        self.render();
+      });
   }
 
-  async getCurrentObs(stationsUrl) {
-    try {
-      const resp = await fetch(stationsUrl);
-      const data = await resp.json();
-      if (!data.features?.length) return null;
-      const obsResp = await fetch(`${data.features[0].id}/observations/latest`);
-      if (obsResp.ok) {
-        const obs = await obsResp.json();
-        return obs.properties;
-      }
-    } catch { }
-    return null;
-  }
-
-  updateWeatherOnly() {
-    if (!this._weatherData || this._weatherData.error) {
-      this.render();
-      return;
-    }
-    
-    const headerEl = this.shadowRoot.querySelector('.header .upd');
-    if (headerEl) {
-      const upd = this._weatherData.lastUpdated?.toLocaleTimeString() || '';
-      headerEl.innerHTML = `Updated: ${upd} <button class="refresh-btn">↻</button>`;
-      headerEl.querySelector('.refresh-btn').addEventListener('click', () => this.fetchWeatherData());
-    }
-    
-    const currentEl = this.shadowRoot.querySelector('.current');
-    if (currentEl) {
-      currentEl.outerHTML = this.current();
-    }
-    
-    const alertsEl = this.shadowRoot.querySelector('.alerts');
-    const alertsHtml = this.alerts();
-    if (alertsEl && alertsHtml) {
-      alertsEl.outerHTML = alertsHtml;
-    } else if (!alertsEl && alertsHtml) {
-      const headerEl = this.shadowRoot.querySelector('.header');
-      if (headerEl) {
-        headerEl.insertAdjacentHTML('afterend', alertsHtml);
-      }
-    } else if (alertsEl && !alertsHtml) {
-      alertsEl.remove();
-    }
-    
-    const hourlyEl = this.shadowRoot.querySelector('.hourly');
-    if (hourlyEl && this._config.show_hourly) {
-      hourlyEl.outerHTML = this.hourly();
-    }
-    
-    const forecastEl = this.shadowRoot.querySelector('.forecast');
-    if (forecastEl && this._config.show_forecast) {
-      forecastEl.outerHTML = this.forecast();
-    }
+  getCurrentObservations(observationStations) {
+    return fetch(observationStations)
+      .then(function(response) { return response.json(); })
+      .then(function(stationsData) {
+        if (!stationsData.features || stationsData.features.length === 0) {
+          return null;
+        }
+        
+        var station = stationsData.features[0];
+        return fetch(station.id + '/observations/latest')
+          .then(function(response) {
+            if (response.ok) {
+              return response.json().then(function(obsData) {
+                return obsData.properties;
+              });
+            }
+            return null;
+          })
+          .catch(function() {
+            return null;
+          });
+      })
+      .catch(function() {
+        return null;
+      });
   }
 
   render() {
     if (!this._hass) return;
-    
-    let h = `<style>${this.css()}</style>`;
+
     if (!this._weatherData) {
-      h += `<ha-card><div class="loading">Loading Weather Data...</div></ha-card>`;
-      this.shadowRoot.innerHTML = h;
-      return;
-    } else if (this._weatherData.error) {
-      h += `<ha-card><div class="error">Error: ${this._weatherData.error}</div></ha-card>`;
-      this.shadowRoot.innerHTML = h;
+      this.shadowRoot.innerHTML = this.getLoadingHTML();
       return;
     }
+
+    if (this._weatherData.error) {
+      this.shadowRoot.innerHTML = this.getErrorHTML();
+      return;
+    }
+
+    this.shadowRoot.innerHTML = this.getMainHTML();
     
-    h += '<ha-card>';
-    h += this.header();
-    if (this._config.show_alerts) h += this.alerts();
-    h += this.current();
-    if (this._config.show_radar) h += this.radar();
-    if (this._config.show_hourly) h += this.hourly();
-    if (this._config.show_forecast) h += this.forecast();
-    h += this.footer();
-    h += '</ha-card>';
+    // Set up radar functionality if enabled
+    if (this._config.show_radar) {
+      this.setupRadar();
+    }
+  }
+
+  setupRadar() {
+    var self = this;
     
-    this.shadowRoot.innerHTML = h;
-    this._hasRenderedRadar = true;
-    
-    const refreshBtn = this.shadowRoot.querySelector('.refresh-btn');
+    // Set up refresh button
+    var refreshBtn = this.shadowRoot.querySelector('.radar-refresh');
     if (refreshBtn) {
-      refreshBtn.addEventListener('click', () => this.fetchWeatherData());
+      refreshBtn.addEventListener('click', function() {
+        self.refreshRadar();
+      });
+    }
+
+    // Set up radar image with proper error handling
+    var radarImg = this.shadowRoot.querySelector('.radar-image');
+    if (radarImg) {
+      radarImg.addEventListener('load', function() {
+        console.log('NWS radar image loaded successfully');
+        this.style.opacity = '1';
+        var timestamp = self.shadowRoot.querySelector('.radar-timestamp');
+        if (timestamp) {
+          timestamp.textContent = 'Updated: ' + new Date().toLocaleTimeString();
+        }
+      });
+
+      radarImg.addEventListener('error', function() {
+        console.log('NWS radar image failed to load, showing fallback');
+        var container = this.parentElement;
+        if (container) {
+          var station = self.findNearestRadarStation();
+          container.innerHTML = '<div class="radar-fallback">' +
+                               '<div class="radar-fallback-title">📡 NEXRAD Station: ' + station + '</div>' +
+                               '<div class="radar-fallback-message">Live radar data not available in browser</div>' +
+                               '<div class="radar-fallback-note">CORS restrictions prevent direct access</div>' +
+                               '<div class="radar-fallback-link"><a href="https://radar.weather.gov/station/' + station + '" target="_blank">View Live Radar on NWS →</a></div>' +
+                               '</div>';
+        }
+      });
     }
   }
 
-  header() {
-    const upd = this._weatherData.lastUpdated?.toLocaleTimeString() || '';
-    return `<div class="header">
-      <div class="title">${this._config.title}</div>
-      <div class="upd">Updated: ${upd} 
-        <button class="refresh-btn">↻</button>
-      </div>
-    </div>`;
+  refreshRadar() {
+    var radarImg = this.shadowRoot.querySelector('.radar-image');
+    if (radarImg) {
+      var station = this.findNearestRadarStation();
+      var newSrc = this.generateNWSRadarUrl(station) + '?t=' + Date.now();
+      radarImg.src = newSrc;
+      console.log('Refreshing NWS radar data...');
+    }
   }
 
-  alerts() {
-    if (!this._weatherData.alerts?.length) return '';
-    let h = '<div class="alerts">';
-    for (const a of this._weatherData.alerts) {
-      const p = a.properties;
-      const sev = (p.severity || 'Minor').toLowerCase();
-      h += `<div class="alert ${sev}">
-        <div class="alert-title">⚠️ ${p.event}</div>
-        <div class="alert-desc">${p.headline}</div>
-      </div>`;
-    }
-    return h + '</div>';
+  getLoadingHTML() {
+    return '<style>' + this.getStyles() + '</style><ha-card><div class="loading">Loading NWS weather data...</div></ha-card>';
   }
 
-  current() {
-    const c = this._weatherData.current;
-    const f = this._weatherData.forecast;
-    let temp = 'N/A', cond = 'Unknown';
-    
-    if (c?.temperature?.value) {
-      temp = Math.round(c.temperature.value * 9/5 + 32);
-    } else if (f?.[0]) {
-      const m = f[0].temperature.toString().match(/\d+/);
-      temp = m ? m[0] : 'N/A';
-    }
-    
-    if (c?.textDescription) cond = c.textDescription;
-    else if (f?.[0]?.shortForecast) cond = f[0].shortForecast;
-
-    let h = `<div class="current">
-      <div class="main">
-        <div class="temp-block">
-          <div class="temp">${temp}°</div>
-          <div class="icon">${this.getIcon(cond)}</div>
-        </div>
-        <div class="cond">${cond}</div>
-      </div>
-      <div class="details">`;
-    
-    if (c?.relativeHumidity?.value) {
-      h += `<div class="det"><span>💧 Humidity</span><b>${Math.round(c.relativeHumidity.value)}%</b></div>`;
-    }
-    if (c?.windSpeed?.value) {
-      const ws = Math.round(c.windSpeed.value * 2.237);
-      const wd = c.windDirection?.value ? this.getWindDir(c.windDirection.value) : '';
-      h += `<div class="det"><span>💨 Wind</span><b>${ws} mph ${wd}</b></div>`;
-    }
-    if (c?.barometricPressure?.value) {
-      const p = Math.round(c.barometricPressure.value / 100);
-      h += `<div class="det"><span>📊 Pressure</span><b>${p} mb</b></div>`;
-    }
-    if (c?.visibility?.value) {
-      const v = Math.round(c.visibility.value / 1609.34);
-      h += `<div class="det"><span>👁️ Visibility</span><b>${v} mi</b></div>`;
-    }
-    return h + '</div></div>';
+  getErrorHTML() {
+    return '<style>' + this.getStyles() + '</style><ha-card><div class="error">Error: ' + this._weatherData.error + '</div></ha-card>';
   }
 
-  radar() {
-    const lat = this._weatherData.coords.lat;
-    const lon = this._weatherData.coords.lon;
-    const zoom = this._config.radar_zoom;
-    const height = this._config.radar_height;
+  getMainHTML() {
+    var html = '<style>' + this.getStyles() + '</style>';
+    html += '<ha-card>';
     
-    const windyUrl = `https://embed.windy.com/embed2.html?lat=${lat}&lon=${lon}&detailLat=${lat}&detailLon=${lon}&width=650&height=${height}&zoom=${zoom}&level=surface&overlay=radar&product=radar&menu=&message=&marker=true&calendar=now&pressure=&type=map&location=coordinates&detail=&metricWind=mph&metricTemp=%C2%B0F&radarRange=-1`;
+    html += this.renderHeader();
     
-    return `<div class="radar">
-      <div class="sec-hdr">Windy.com Interactive Radar</div>
-      <div class="radar-container">
-        <iframe 
-          class="windy-iframe"
-          width="100%" 
-          height="${height}" 
-          src="${windyUrl}" 
-          frameborder="0"
-          style="border: 0; border-radius: 8px;">
-        </iframe>
-      </div>
-      <div class="radar-note">
-        <span>Interactive radar with pan, zoom, and layer controls</span>
-        <span class="radar-tip">• Click and drag to pan • Scroll to zoom • Use controls for layers</span>
-      </div>
-    </div>`;
+    if (this._config.show_alerts) {
+      html += this.renderAlerts();
+    }
+    
+    html += this.renderCurrentWeather();
+    
+    if (this._config.show_radar) {
+      html += this.renderRadarSection();
+    }
+    
+    if (this._config.show_hourly) {
+      html += this.renderHourlyForecast();
+    }
+    
+    if (this._config.show_forecast) {
+      html += this.renderExtendedForecast();
+    }
+    
+    html += this.renderFooter();
+    
+    html += '</ha-card>';
+    return html;
   }
 
-  hourly() {
-    if (!this._weatherData.hourly?.length) return '';
-    let h = '<div class="hourly"><div class="sec-hdr">12-Hour Forecast</div><div class="h-scroll">';
-    for (const hr of this._weatherData.hourly.slice(0, 12)) {
-      const t = new Date(hr.startTime).toLocaleTimeString([], {hour: 'numeric'});
-      const icon = this.getIcon(hr.shortForecast);
-      h += `<div class="h-item">
-        <div class="h-time">${t}</div>
-        <div class="h-icon">${icon}</div>
-        <div class="h-temp">${hr.temperature}°</div>`;
-      if (hr.probabilityOfPrecipitation?.value) {
-        h += `<div class="h-pop">💧${hr.probabilityOfPrecipitation.value}%</div>`;
+  renderHeader() {
+    var lastUpdated = this._weatherData.lastUpdated ? this._weatherData.lastUpdated.toLocaleTimeString() : 'Unknown';
+    
+    return '<div class="card-header">' +
+           '<div class="title">' + this._config.title + '</div>' +
+           '<div class="header-controls">' +
+           '<div class="last-updated">Updated: ' + lastUpdated + '</div>' +
+           '<button class="refresh-btn" onclick="this.getRootNode().host.fetchWeatherData()">↻</button>' +
+           '</div>' +
+           '</div>';
+  }
+
+  renderAlerts() {
+    if (!this._weatherData.alerts || this._weatherData.alerts.length === 0) {
+      return '';
+    }
+
+    var html = '<div class="alerts-section">';
+    
+    for (var i = 0; i < this._weatherData.alerts.length; i++) {
+      var alert = this._weatherData.alerts[i];
+      var props = alert.properties;
+      var severity = props.severity || 'Minor';
+      
+      html += '<div class="alert alert-' + severity.toLowerCase() + '">';
+      html += '<div class="alert-header">';
+      html += '<span class="alert-title">' + props.event + '</span>';
+      html += '<span class="alert-severity">' + severity + '</span>';
+      html += '</div>';
+      html += '<div class="alert-content">';
+      html += '<div class="alert-headline">' + props.headline + '</div>';
+      html += '</div>';
+      html += '</div>';
+    }
+    
+    html += '</div>';
+    return html;
+  }
+
+  renderCurrentWeather() {
+    var current = this._weatherData.current;
+    var forecast = this._weatherData.forecast;
+    
+    var temperature = 'N/A';
+    if (current && current.temperature && current.temperature.value) {
+      temperature = Math.round(this.celsiusToFahrenheit(current.temperature.value));
+    } else if (forecast && forecast[0]) {
+      var match = forecast[0].temperature.toString().match(/\d+/);
+      temperature = match ? match[0] : 'N/A';
+    }
+
+    var condition = 'Unknown';
+    if (current && current.textDescription) {
+      condition = current.textDescription;
+    } else if (forecast && forecast[0] && forecast[0].shortForecast) {
+      condition = forecast[0].shortForecast;
+    }
+
+    var html = '<div class="current-weather">';
+    html += '<div class="current-main">';
+    html += '<div class="temperature-section">';
+    html += '<div class="temperature">' + temperature + '°</div>';
+    html += '</div>';
+    html += '<div class="condition-info">';
+    html += '<div class="condition">' + condition + '</div>';
+    html += '</div>';
+    html += '</div>';
+
+    html += '<div class="current-details">';
+    html += '<div class="details-grid">';
+    
+    if (current && current.relativeHumidity && current.relativeHumidity.value) {
+      html += '<div class="detail-item">';
+      html += '<span class="detail-label">Humidity</span>';
+      html += '<span class="detail-value">' + Math.round(current.relativeHumidity.value) + '%</span>';
+      html += '</div>';
+    }
+    
+    if (current && current.windSpeed && current.windSpeed.value) {
+      var windSpeed = Math.round(this.mpsToMph(current.windSpeed.value));
+      html += '<div class="detail-item">';
+      html += '<span class="detail-label">Wind</span>';
+      html += '<span class="detail-value">' + windSpeed + ' mph</span>';
+      html += '</div>';
+    }
+    
+    if (current && current.barometricPressure && current.barometricPressure.value) {
+      var pressure = Math.round(current.barometricPressure.value / 100);
+      html += '<div class="detail-item">';
+      html += '<span class="detail-label">Pressure</span>';
+      html += '<span class="detail-value">' + pressure + ' mb</span>';
+      html += '</div>';
+    }
+    
+    html += '<div class="detail-item">';
+    html += '<span class="detail-label">Location</span>';
+    html += '<span class="detail-value">' + this._weatherData.coordinates.latitude.toFixed(2) + ', ' + this._weatherData.coordinates.longitude.toFixed(2) + '</span>';
+    html += '</div>';
+    
+    html += '</div>';
+    html += '</div>';
+    html += '</div>';
+    
+    return html;
+  }
+
+  renderRadarSection() {
+    var radarStation = this.findNearestRadarStation();
+    var radarUrl = this.generateNWSRadarUrl(radarStation);
+    
+    var html = '<div class="radar-section">';
+    
+    // Only show header if configured to do so
+    if (this._config.show_radar_header) {
+      html += '<div class="section-header">NWS NEXRAD Radar (' + radarStation + ')</div>';
+    }
+    
+    html += '<div class="radar-controls">' +
+           '<div class="radar-info">Attempting Live NEXRAD Data</div>' +
+           '<div class="radar-station">Station: ' + radarStation + ' | Updates every 4-6 minutes</div>' +
+           '</div>' +
+           '<div class="radar-display" style="height: ' + this._config.radar_height + 'px;">' +
+           '<div class="radar-container">' +
+           '<img src="' + radarUrl + '" alt="NEXRAD Radar" class="radar-image" />' +
+           '<div class="radar-overlay">' +
+           '<div class="radar-timestamp">Loading...</div>' +
+           '<div class="radar-refresh">↻ Refresh</div>' +
+           '</div>' +
+           '</div>' +
+           '</div>' +
+           '<div class="radar-footer">' +
+           '<div class="radar-legend">Reflectivity: Green=Light, Yellow=Moderate, Red=Heavy</div>' +
+           '<div class="radar-link"><a href="https://radar.weather.gov/station/' + radarStation + '" target="_blank">Full NWS Radar →</a></div>' +
+           '</div>' +
+           '</div>';
+           
+    return html;
+  }
+
+  renderHourlyForecast() {
+    if (!this._weatherData.hourly || this._weatherData.hourly.length === 0) {
+      return '';
+    }
+
+    var html = '<div class="hourly-section">';
+    
+    // Only show header if configured to do so
+    if (this._config.show_hourly_header) {
+      html += '<div class="section-header">12-Hour Forecast</div>';
+    }
+    
+    html += '<div class="hourly-scroll">';
+    
+    var hourlyData = this._weatherData.hourly.slice(0, 12);
+    for (var i = 0; i < hourlyData.length; i++) {
+      var hour = hourlyData[i];
+      var time = new Date(hour.startTime);
+      var timeStr = time.toLocaleTimeString([], { hour: 'numeric' });
+      
+      html += '<div class="hourly-item">';
+      html += '<div class="hour-time">' + timeStr + '</div>';
+      html += '<div class="hour-temp">' + hour.temperature + '°</div>';
+      html += '<div class="hour-condition">' + this.truncateText(hour.shortForecast, 15) + '</div>';
+      html += '</div>';
+    }
+    
+    html += '</div>';
+    html += '</div>';
+    
+    return html;
+  }
+
+  renderExtendedForecast() {
+    if (!this._weatherData.forecast || this._weatherData.forecast.length === 0) {
+      return '';
+    }
+
+    var html = '<div class="forecast-section">';
+    
+    // Only show header if configured to do so
+    if (this._config.show_forecast_header) {
+      html += '<div class="section-header">' + this._config.forecast_days + '-Day Forecast</div>';
+    }
+    
+    var maxPeriods = Math.min(this._config.forecast_days * 2, this._weatherData.forecast.length);
+    for (var i = 0; i < maxPeriods; i++) {
+      var period = this._weatherData.forecast[i];
+      
+      html += '<div class="forecast-item">';
+      html += '<div class="forecast-name">' + period.name + '</div>';
+      html += '<div class="forecast-temp">' + period.temperature + '°' + period.temperatureUnit + '</div>';
+      html += '<div class="forecast-desc">' + period.shortForecast + '</div>';
+      html += '</div>';
+    }
+    
+    html += '</div>';
+    
+    return html;
+  }
+
+  renderFooter() {
+    var html = '<div class="card-footer">';
+    html += '<div class="data-source">Data from National Weather Service</div>';
+    if (this._config.show_branding) {
+      html += '<div class="branding">YAWC v2.2.0</div>';
+    }
+    html += '</div>';
+    
+    return html;
+  }
+
+  findNearestRadarStation() {
+    var latitude = this._weatherData.coordinates.latitude;
+    var longitude = this._weatherData.coordinates.longitude;
+    
+    var radarStations = [
+      { id: 'KABR', lat: 45.456, lng: -98.413 },
+      { id: 'KAMA', lat: 35.233, lng: -101.709 },
+      { id: 'KAMX', lat: 25.611, lng: -80.413 },
+      { id: 'KBGM', lat: 42.200, lng: -75.985 },
+      { id: 'KBMX', lat: 33.172, lng: -86.770 },
+      { id: 'KBOX', lat: 41.956, lng: -71.137 },
+      { id: 'KBUF', lat: 42.949, lng: -78.737 },
+      { id: 'KCLE', lat: 41.413, lng: -81.860 },
+      { id: 'KDTX', lat: 42.700, lng: -83.472 },
+      { id: 'KEAX', lat: 38.810, lng: -94.264 },
+      { id: 'KEWX', lat: 29.704, lng: -98.029 },
+      { id: 'KFFC', lat: 33.364, lng: -84.566 },
+      { id: 'KFWS', lat: 32.573, lng: -97.303 },
+      { id: 'KHGX', lat: 29.472, lng: -95.079 },
+      { id: 'KJAX', lat: 30.485, lng: -81.702 },
+      { id: 'KLOT', lat: 41.604, lng: -88.085 },
+      { id: 'KLSX', lat: 38.699, lng: -90.683 },
+      { id: 'KLWX', lat: 38.975, lng: -77.478 },
+      { id: 'KMHX', lat: 34.776, lng: -76.876 },
+      { id: 'KMPX', lat: 44.849, lng: -93.566 },
+      { id: 'KOKX', lat: 40.866, lng: -72.864 },
+      { id: 'KRAX', lat: 35.665, lng: -78.490 },
+      { id: 'KTBW', lat: 27.706, lng: -82.402 },
+      { id: 'KTLX', lat: 35.333, lng: -97.278 },
+      { id: 'KTWX', lat: 38.997, lng: -96.233 }
+    ];
+
+    var nearest = radarStations[0];
+    var minDistance = this.calculateDistance(latitude, longitude, nearest.lat, nearest.lng);
+
+    for (var i = 1; i < radarStations.length; i++) {
+      var station = radarStations[i];
+      var distance = this.calculateDistance(latitude, longitude, station.lat, station.lng);
+      if (distance < minDistance) {
+        minDistance = distance;
+        nearest = station;
       }
-      h += '</div>';
     }
-    return h + '</div></div>';
+
+    return nearest.id;
   }
 
-  forecast() {
-    if (!this._weatherData.forecast?.length) return '';
-    let h = `<div class="forecast"><div class="sec-hdr">${this._config.forecast_days}-Day Forecast</div>`;
-    const max = Math.min(this._config.forecast_days * 2, this._weatherData.forecast.length);
-    for (let i = 0; i < max; i++) {
-      const p = this._weatherData.forecast[i];
-      const icon = this.getIcon(p.shortForecast);
-      h += `<div class="f-item">
-        <div class="f-name">${p.name}</div>
-        <div class="f-icon">${icon}</div>
-        <div class="f-temp">${p.temperature}°</div>
-        <div class="f-desc">${p.shortForecast}</div>
-      </div>`;
-    }
-    return h + '</div>';
+  calculateDistance(lat1, lng1, lat2, lng2) {
+    var R = 3959;
+    var dLat = (lat2 - lat1) * Math.PI / 180;
+    var dLng = (lng2 - lng1) * Math.PI / 180;
+    var a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLng/2) * Math.sin(dLng/2);
+    var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
   }
 
-  footer() {
-    return `<div class="footer">
-      <div class="data-source">Data from National Weather Service</div>
-      ${this._config.show_branding ? '<div class="branding">YAWC v3.2 - Yet Another Weather Card</div>' : ''}
-    </div>`;
+  generateNWSRadarUrl(station) {
+    return 'https://radar.weather.gov/ridge/RadarImg/N0R/' + station + '/' + station + '_N0R_0.gif';
   }
 
-  getIcon(cond) {
-    if (!cond) return '🌡️';
-    const c = cond.toLowerCase();
-    if (c.includes('sunny') || c.includes('clear')) return '☀️';
-    if (c.includes('partly')) return '⛅';
-    if (c.includes('cloudy')) return '☁️';
-    if (c.includes('thunder')) return '⛈️';
-    if (c.includes('rain') || c.includes('shower')) return '🌧️';
-    if (c.includes('snow')) return '❄️';
-    if (c.includes('fog') || c.includes('mist')) return '🌫️';
-    if (c.includes('wind')) return '💨';
-    if (c.includes('hot')) return '🔥';
-    if (c.includes('cold')) return '🥶';
-    return '🌡️';
+  celsiusToFahrenheit(celsius) {
+    return (celsius * 9/5) + 32;
   }
 
-  getWindDir(deg) {
-    const dirs = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
-    return dirs[Math.round(deg / 22.5) % 16];
+  mpsToMph(mps) {
+    return mps * 2.237;
   }
 
-  css() {
-    return `
-ha-card { background: var(--card-background-color); border-radius: var(--ha-card-border-radius); overflow: hidden; }
-.loading, .error { padding: 20px; text-align: center; }
-.error { color: var(--error-color); }
-.header { display: flex; justify-content: space-between; align-items: center; padding: 16px; border-bottom: 1px solid var(--divider-color); }
-.title { font-size: 20px; font-weight: 500; }
-.upd { font-size: 12px; color: var(--secondary-text-color); display: flex; align-items: center; gap: 8px; }
-.refresh-btn { background: none; border: none; font-size: 16px; cursor: pointer; padding: 0; color: var(--primary-text-color); }
-.alerts { margin: 16px; }
-.alert { padding: 12px; margin-bottom: 8px; border-radius: 8px; color: white; }
-.alert.severe { background: #d32f2f; }
-.alert.moderate { background: #f57c00; }
-.alert.minor { background: #1976d2; }
-.alert-title { font-weight: bold; margin-bottom: 4px; }
-.alert-desc { font-size: 13px; opacity: 0.95; }
-.current { margin: 16px; }
-.main { display: flex; align-items: center; gap: 20px; margin-bottom: 16px; }
-.temp-block { display: flex; align-items: center; gap: 12px; }
-.temp { font-size: 48px; font-weight: 300; line-height: 1; }
-.icon { font-size: 36px; }
-.cond { font-size: 18px; flex: 1; }
-.details { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
-.det { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; background: var(--secondary-background-color); border-radius: 8px; }
-.det span { color: var(--secondary-text-color); font-size: 13px; }
-.det b { font-size: 14px; }
-.sec-hdr { font-size: 16px; font-weight: 500; margin: 16px 16px 12px; padding: 8px 12px; background: var(--secondary-background-color); border-radius: 4px; }
-.radar { margin: 16px; }
-.radar-container { background: #1a1a1a; border-radius: 8px; overflow: hidden; position: relative; }
-.windy-iframe { display: block; }
-.radar-note { text-align: center; font-size: 12px; color: var(--secondary-text-color); margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
-.radar-tip { font-size: 11px; opacity: 0.8; }
-.hourly { margin: 16px; }
-.h-scroll { display: flex; gap: 8px; overflow-x: auto; padding: 8px 0; }
-.h-item { min-width: 70px; padding: 10px 8px; background: var(--secondary-background-color); border-radius: 8px; text-align: center; }
-.h-time { font-size: 12px; color: var(--secondary-text-color); margin-bottom: 4px; }
-.h-icon { font-size: 20px; margin: 4px 0; }
-.h-temp { font-size: 16px; font-weight: bold; margin: 4px 0; }
-.h-pop { font-size: 11px; color: #2196f3; }
-.forecast { margin: 16px; }
-.f-item { display: grid; grid-template-columns: 100px 30px 60px 1fr; align-items: center; padding: 12px; border-bottom: 1px solid var(--divider-color); gap: 8px; }
-.f-item:last-child { border-bottom: none; }
-.f-name { font-weight: 500; }
-.f-icon { text-align: center; font-size: 20px; }
-.f-temp { text-align: center; font-weight: bold; }
-.f-desc { text-align: right; color: var(--secondary-text-color); font-size: 14px; }
-.footer { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-top: 1px solid var(--divider-color); background: var(--secondary-background-color); }
-.data-source, .branding { font-size: 11px; color: var(--secondary-text-color); }
-@media (max-width: 600px) {
-  .main { flex-direction: column; text-align: center; }
-  .details { grid-template-columns: 1fr 1fr; }
-  .f-item { grid-template-columns: 80px 25px 50px 1fr; font-size: 13px; }
-}`;
+  truncateText(text, maxLength) {
+    if (!text || text.length <= maxLength) return text;
+    return text.substr(0, maxLength).trim() + '...';
   }
 
-  getCardSize() { 
-    return this._config.show_radar ? 9 : 6; 
+  getStyles() {
+    return 'ha-card{padding:0;background:var(--card-background-color);border-radius:var(--ha-card-border-radius);box-shadow:var(--ha-card-box-shadow);overflow:hidden}.loading,.error{padding:16px;text-align:center}.error{color:var(--error-color)}.card-header{display:flex;justify-content:space-between;align-items:center;padding:16px 16px 0 16px;border-bottom:1px solid var(--divider-color);margin-bottom:16px}.title{font-size:20px;font-weight:500}.header-controls{display:flex;align-items:center;gap:12px}.last-updated{font-size:12px;color:var(--secondary-text-color)}.refresh-btn{background:none;border:none;font-size:18px;cursor:pointer;padding:4px}.alerts-section{margin:0 16px 16px 16px}.alert{margin-bottom:8px;border-radius:8px;overflow:hidden;border-left:4px solid}.alert-severe{background:var(--warning-color);border-left-color:darkorange}.alert-moderate{background:var(--info-color);border-left-color:blue}.alert-minor{background:var(--secondary-background-color);border-left-color:gray}.alert-header{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:rgba(0,0,0,0.1)}.alert-title{font-weight:bold;color:white}.alert-severity{font-size:12px;padding:2px 6px;border-radius:4px;background:rgba(0,0,0,0.2);color:white}.alert-content{padding:12px;color:white}.current-weather{margin:0 16px 16px 16px}.current-main{display:flex;align-items:center;margin-bottom:16px}.temperature-section{margin-right:16px}.temperature{font-size:48px;font-weight:300;line-height:1}.condition-info{flex:1}.condition{font-size:18px;margin-bottom:8px}.current-details{border-top:1px solid var(--divider-color);padding-top:16px}.details-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}.detail-item{display:flex;justify-content:space-between;padding:8px;background:var(--secondary-background-color);border-radius:8px}.detail-label{font-size:14px}.detail-value{font-weight:500;font-size:14px}.section-header{font-size:16px;font-weight:500;margin:16px 16px 8px 16px;padding:8px;background:var(--secondary-background-color);border-radius:4px}.radar-section{margin:0 16px 16px 16px}.radar-controls{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--secondary-background-color);border-radius:4px;margin-bottom:8px}.radar-info{font-size:12px;font-weight:500;color:var(--primary-color)}.radar-station{font-size:11px;color:var(--secondary-text-color)}.radar-display{position:relative;background:#000000;border-radius:8px;border:1px solid var(--divider-color);overflow:hidden}.radar-container{position:relative;width:100%;height:100%}.radar-image{width:100%;height:100%;object-fit:contain;opacity:0.8;transition:opacity 0.3s ease}.radar-overlay{position:absolute;top:0;left:0;right:0;padding:8px;display:flex;justify-content:space-between;align-items:flex-start;pointer-events:none}.radar-overlay > *{pointer-events:auto}.radar-timestamp{background:rgba(0,0,0,0.7);color:white;padding:4px 8px;border-radius:4px;font-size:11px;font-weight:500}.radar-refresh{background:rgba(0,0,0,0.7);color:white;padding:4px 8px;border-radius:4px;font-size:11px;cursor:pointer;transition:background 0.2s}.radar-refresh:hover{background:rgba(0,0,0,0.9)}.radar-fallback{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#ffffff;text-align:center;padding:20px}.radar-fallback-title{font-size:16px;font-weight:bold;margin-bottom:12px}.radar-fallback-message{font-size:14px;margin-bottom:8px;opacity:0.9}.radar-fallback-note{font-size:12px;margin-bottom:16px;opacity:0.7}.radar-fallback-link a{color:#88ff88;text-decoration:none;font-weight:500}.radar-fallback-link a:hover{text-decoration:underline}.radar-footer{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--secondary-background-color);border-radius:4px;margin-top:8px}.radar-legend{font-size:11px;color:var(--secondary-text-color)}.radar-link{font-size:11px}.radar-link a{color:var(--primary-color);text-decoration:none}.radar-link a:hover{text-decoration:underline}.hourly-section{margin:0 16px 16px 16px}.hourly-scroll{display:flex;gap:12px;overflow-x:auto;padding:8px 0}.hourly-item{display:flex;flex-direction:column;align-items:center;gap:8px;min-width:80px;padding:12px 8px;background:var(--secondary-background-color);border-radius:8px;text-align:center}.hour-time{font-size:12px;font-weight:500}.hour-temp{font-size:16px;font-weight:bold}.hour-condition{font-size:10px;opacity:0.8}.forecast-section{margin:0 16px 16px 16px}.forecast-item{display:flex;justify-content:space-between;align-items:center;padding:8px;border-bottom:1px solid var(--divider-color)}.forecast-name{font-weight:500;min-width:80px}.forecast-temp{font-weight:bold;min-width:60px;text-align:center}.forecast-desc{flex:1;text-align:right;color:var(--secondary-text-color);font-size:14px}.card-footer{display:flex;justify-content:space-between;align-items:center;padding:16px;border-top:1px solid var(--divider-color);background:var(--secondary-background-color)}.data-source,.branding{font-size:12px;color:var(--secondary-text-color)}@media(max-width:600px){.current-main{flex-direction:column;text-align:center}.temperature-section{margin-right:0;margin-bottom:16px}.radar-controls{flex-direction:column;gap:4px;text-align:center}.radar-footer{flex-direction:column;gap:4px;text-align:center}}';
   }
-  
+
+  getCardSize() {
+    var size = 4;
+    if (this._config.show_hourly) size += 1;
+    if (this._config.show_radar) size += 1;
+    return size;
+  }
+
   static getConfigElement() {
     return document.createElement('yawc-card-editor');
   }
-  
-  static getStubConfig() { 
-    return { 
-      title: 'YAWC Weather', 
+
+  static getStubConfig() {
+    return {
+      title: 'YAWC Weather',
       show_radar: true,
-      radar_zoom: 7,
-      radar_height: 450,
+      radar_height: 400,
       show_forecast: true,
       forecast_days: 5
-    }; 
+    };
   }
 }
 
-// Configuration Editor
 class YawcCardEditor extends HTMLElement {
   constructor() {
     super();
@@ -435,7 +585,7 @@ class YawcCardEditor extends HTMLElement {
   }
 
   configChanged(newConfig) {
-    const event = new Event('config-changed', {
+    var event = new Event('config-changed', {
       bubbles: true,
       composed: true,
     });
@@ -444,172 +594,125 @@ class YawcCardEditor extends HTMLElement {
   }
 
   render() {
-    this.shadowRoot.innerHTML = `
-      <style>
-        .editor { padding: 16px; }
-        .section { background: var(--secondary-background-color); padding: 12px; border-radius: 8px; margin-bottom: 16px; }
-        .section-title { font-weight: 500; margin-bottom: 12px; color: var(--primary-text-color); }
-        .form-group { margin-bottom: 12px; }
-        label { display: block; margin-bottom: 4px; font-size: 14px; color: var(--primary-text-color); }
-        input[type="text"], input[type="number"], select {
-          width: 100%; padding: 8px; border: 1px solid var(--divider-color);
-          border-radius: 4px; background: var(--card-background-color);
-          color: var(--primary-text-color); box-sizing: border-box;
-        }
-        input[type="checkbox"] { margin-right: 8px; }
-        .checkbox-label { display: flex; align-items: center; margin-bottom: 8px; cursor: pointer; }
-        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-        .info-box { background: var(--primary-color); color: white; padding: 12px; border-radius: 8px; margin-top: 16px; }
-        .info-title { font-weight: 500; margin-bottom: 8px; }
-        .info-content { font-size: 13px; line-height: 1.4; }
-      </style>
-      
-      <div class="editor">
-        <div class="section">
-          <div class="section-title">Basic Settings</div>
-          <div class="form-group">
-            <label>Card Title</label>
-            <input type="text" id="title" value="${this._config.title || 'YAWC Weather'}">
-          </div>
-          <div class="form-group">
-            <label>Update Interval (minutes)</label>
-            <input type="number" id="update_interval_min" value="${(this._config.update_interval || 300000) / 60000}" min="1" max="60">
-          </div>
-        </div>
-        
-        <div class="section">
-          <div class="section-title">Location Settings</div>
-          <div class="grid-2">
-            <div class="form-group">
-              <label>Latitude (optional)</label>
-              <input type="number" id="latitude" value="${this._config.latitude || ''}" placeholder="Auto" step="0.0001">
-            </div>
-            <div class="form-group">
-              <label>Longitude (optional)</label>
-              <input type="number" id="longitude" value="${this._config.longitude || ''}" placeholder="Auto" step="0.0001">
-            </div>
-          </div>
-        </div>
-        
-        <div class="section">
-          <div class="section-title">Display Options</div>
-          <label class="checkbox-label">
-            <input type="checkbox" id="show_radar" ${this._config.show_radar !== false ? 'checked' : ''}>
-            Show Windy Radar
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" id="show_alerts" ${this._config.show_alerts !== false ? 'checked' : ''}>
-            Show Weather Alerts
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" id="show_hourly" ${this._config.show_hourly !== false ? 'checked' : ''}>
-            Show Hourly Forecast
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" id="show_forecast" ${this._config.show_forecast !== false ? 'checked' : ''}>
-            Show Extended Forecast
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" id="show_branding" ${this._config.show_branding !== false ? 'checked' : ''}>
-            Show YAWC Branding
-          </label>
-        </div>
-        
-        <div class="section">
-          <div class="section-title">Radar Settings</div>
-          <div class="form-group">
-            <label>Radar Zoom Level</label>
-            <input type="number" id="radar_zoom" value="${this._config.radar_zoom || 7}" min="5" max="10">
-          </div>
-          <div class="form-group">
-            <label>Radar Height (pixels)</label>
-            <input type="number" id="radar_height" value="${this._config.radar_height || 450}" min="300" max="600" step="50">
-          </div>
-        </div>
-        
-        <div class="section">
-          <div class="section-title">Forecast Settings</div>
-          <div class="form-group">
-            <label>Forecast Days</label>
-            <input type="number" id="forecast_days" value="${this._config.forecast_days || 5}" min="1" max="7">
-          </div>
-        </div>
-        
-        <div class="info-box">
-          <div class="info-title">🌟 YAWC v3.2 Features</div>
-          <div class="info-content">
-            ✓ Stable Windy.com radar that doesn't refresh<br>
-            ✓ Real-time NWS weather data<br>
-            ✓ Weather alerts with severity levels<br>
-            ✓ 12-hour hourly forecast with precipitation<br>
-            ✓ Extended daily forecast<br>
-            ✓ Interactive radar with multiple layers<br>
-            ✓ Auto-updates without refreshing radar
-          </div>
-        </div>
-      </div>
-    `;
+    var html = '<div style="padding: 16px;">';
     
-    this.attachListeners();
+    html += '<div style="margin-bottom: 16px;">';
+    html += '<div style="margin-bottom: 16px;">';
+    html += '<label>Card Title:</label><br>';
+    html += '<input type="text" id="title" value="' + (this._config.title || 'YAWC Weather') + '" style="width: 100%; padding: 8px; margin-top: 4px;">';
+    html += '</div>';
+    
+    html += '<div style="margin-bottom: 16px;">';
+    html += '<label><input type="checkbox" id="show_radar" ' + (this._config.show_radar !== false ? 'checked' : '') + '> Enable NWS Radar</label>';
+    html += '</div>';
+    
+    html += '<div style="margin-bottom: 16px;">';
+    html += '<label>Radar Height:</label><br>';
+    html += '<input type="number" id="radar_height" value="' + (this._config.radar_height || 400) + '" min="200" max="600" style="width: 100px; padding: 4px;">';
+    html += '<span style="font-size: 12px; color: #666; margin-left: 8px;">pixels</span>';
+    html += '</div>';
+    
+    html += '<div style="margin-bottom: 16px;">';
+    html += '<label><input type="checkbox" id="show_alerts" ' + (this._config.show_alerts !== false ? 'checked' : '') + '> Show Weather Alerts</label>';
+    html += '</div>';
+    
+    html += '<div style="margin-bottom: 16px;">';
+    html += '<label><input type="checkbox" id="show_hourly" ' + (this._config.show_hourly !== false ? 'checked' : '') + '> Show Hourly Forecast</label>';
+    html += '</div>';
+    
+    html += '<div style="margin-bottom: 16px;">';
+    html += '<label><input type="checkbox" id="show_forecast" ' + (this._config.show_forecast !== false ? 'checked' : '') + '> Show Extended Forecast</label>';
+    html += '</div>';
+    
+    // NEW: Header visibility options
+    html += '<div style="border-top: 1px solid #ccc; margin: 20px 0 16px 0; padding-top: 16px;">';
+    html += '<div style="font-weight: bold; margin-bottom: 12px;">Section Headers:</div>';
+    
+    html += '<div style="margin-bottom: 8px;">';
+    html += '<label><input type="checkbox" id="show_radar_header" ' + (this._config.show_radar_header !== false ? 'checked' : '') + '> Show Radar Header</label>';
+    html += '</div>';
+    
+    html += '<div style="margin-bottom: 8px;">';
+    html += '<label><input type="checkbox" id="show_hourly_header" ' + (this._config.show_hourly_header !== false ? 'checked' : '') + '> Show "12-Hour Forecast" Header</label>';
+    html += '</div>';
+    
+    html += '<div style="margin-bottom: 16px;">';
+    html += '<label><input type="checkbox" id="show_forecast_header" ' + (this._config.show_forecast_header !== false ? 'checked' : '') + '> Show "X-Day Forecast" Header</label>';
+    html += '</div>';
+    
+    html += '</div>';
+    
+    html += '<div style="margin-bottom: 16px;">';
+    html += '<label>Forecast Days:</label><br>';
+    html += '<input type="number" id="forecast_days" value="' + (this._config.forecast_days || 5) + '" min="1" max="7" style="width: 60px; padding: 4px;">';
+    html += '</div>';
+    
+    html += '<div style="background: #e8f5e8; padding: 12px; border-radius: 4px; margin-top: 16px;">';
+    html += 'YAWC v2.2.0 - Fixed Error Handling';
+    html += '<div style="font-size: 12px; margin-top: 4px;">No more JavaScript errors - clean radar implementation</div>';
+    html += '<div style="font-size: 12px; margin-top: 4px;">Attempts live NWS radar, graceful fallback if blocked</div>';
+    html += '</div>';
+    
+    html += '</div>';
+    
+    this.shadowRoot.innerHTML = html;
+    this.attachEventListeners();
   }
 
-  attachListeners() {
-    // Text and number inputs
-    const inputs = ['title', 'latitude', 'longitude', 'radar_zoom', 'radar_height', 'forecast_days'];
-    inputs.forEach(id => {
-      const input = this.shadowRoot.getElementById(id);
+  attachEventListeners() {
+    var self = this;
+    
+    var inputs = ['title', 'radar_height', 'forecast_days'];
+    for (var i = 0; i < inputs.length; i++) {
+      var inputId = inputs[i];
+      var input = this.shadowRoot.getElementById(inputId);
       if (input) {
-        input.addEventListener('input', (e) => {
-          let value = e.target.value;
-          if (['latitude', 'longitude'].includes(id)) {
-            value = value ? parseFloat(value) : null;
-          } else if (['radar_zoom', 'radar_height', 'forecast_days'].includes(id)) {
-            value = parseInt(value) || (id === 'radar_zoom' ? 7 : id === 'radar_height' ? 450 : 5);
+        input.addEventListener('input', function(e) {
+          var key = e.target.id;
+          var value = e.target.value;
+          if (['radar_height', 'forecast_days'].includes(key)) {
+            value = parseInt(value) || (key === 'radar_height' ? 400 : 5);
           }
-          this.updateConfig(id, value);
+          self.updateConfig(key, value);
         });
       }
-    });
-    
-    // Special handling for update interval
-    const updateIntervalInput = this.shadowRoot.getElementById('update_interval_min');
-    if (updateIntervalInput) {
-      updateIntervalInput.addEventListener('input', (e) => {
-        const minutes = parseInt(e.target.value) || 5;
-        this.updateConfig('update_interval', minutes * 60000);
-      });
     }
-    
-    // Checkboxes
-    const checkboxes = ['show_radar', 'show_alerts', 'show_hourly', 'show_forecast', 'show_branding'];
-    checkboxes.forEach(id => {
-      const checkbox = this.shadowRoot.getElementById(id);
+
+    // Updated to include the new header checkboxes
+    var checkboxes = ['show_radar', 'show_alerts', 'show_hourly', 'show_forecast', 
+                     'show_radar_header', 'show_hourly_header', 'show_forecast_header'];
+    for (var i = 0; i < checkboxes.length; i++) {
+      var checkboxId = checkboxes[i];
+      var checkbox = this.shadowRoot.getElementById(checkboxId);
       if (checkbox) {
-        checkbox.addEventListener('change', (e) => {
-          this.updateConfig(id, e.target.checked);
+        checkbox.addEventListener('change', function(e) {
+          self.updateConfig(e.target.id, e.target.checked);
         });
       }
-    });
+    }
   }
 
   updateConfig(key, value) {
-    this._config = { ...this._config, [key]: value };
-    this.configChanged(this._config);
+    var newConfig = {};
+    for (var prop in this._config) {
+      newConfig[prop] = this._config[prop];
+    }
+    newConfig[key] = value;
+    this._config = newConfig;
+    this.configChanged(newConfig);
   }
 }
 
-// Register the components
 customElements.define('yawc-card', YetAnotherWeatherCard);
 customElements.define('yawc-card-editor', YawcCardEditor);
 
-// Register with HACS
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: 'yawc-card',
   name: 'YAWC - Yet Another Weather Card',
-  description: 'NWS weather card with stable Windy radar',
+  description: 'NWS weather card with radar, alerts, and forecasts - no JavaScript errors',
   preview: false,
   documentationURL: 'https://github.com/cnewman402/yawc'
 });
 
-console.log('YAWC v3.2 - Complete with Configuration Editor!');
+console.log('YAWC v2.2.0 - Fresh Implementation with Fixed Radar Loaded Successfully!');
