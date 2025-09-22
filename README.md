@@ -4,7 +4,7 @@ A comprehensive Home Assistant weather card featuring global weather data, inter
 
 ## Preview
 
-![YAWC Weather Card](path-to-your-overall-look-image.png)
+![YAWC Weather Card](screenshots/main.png)
 
 *Clean, modern weather display with live updating time, current conditions, interactive radar, hourly forecast, and extended forecast*
 
